@@ -1,0 +1,43 @@
+# vsql_http — url_encode / url_decode tests
+INSTALL EXTENSION vsql_http;
+# url_encode: basic cases
+SELECT vsql_http.url_encode('hello world');
+vsql_http.url_encode('hello world')
+hello%20world
+SELECT vsql_http.url_encode('a=1&b=2');
+vsql_http.url_encode('a=1&b=2')
+a%3D1%26b%3D2
+SELECT vsql_http.url_encode('');
+vsql_http.url_encode('')
+
+SELECT vsql_http.url_encode('no-encoding-needed');
+vsql_http.url_encode('no-encoding-needed')
+no-encoding-needed
+SELECT vsql_http.url_encode('https://example.com/path?q=hello world');
+vsql_http.url_encode('https://example.com/path?q=hello world')
+https%3A%2F%2Fexample.com%2Fpath%3Fq%3Dhello%20world
+# url_decode: basic cases
+SELECT vsql_http.url_decode('hello%20world');
+vsql_http.url_decode('hello%20world')
+hello world
+SELECT vsql_http.url_decode('a%3D1%26b%3D2');
+vsql_http.url_decode('a%3D1%26b%3D2')
+a=1&b=2
+SELECT vsql_http.url_decode('');
+vsql_http.url_decode('')
+
+SELECT vsql_http.url_decode('no-decoding-needed');
+vsql_http.url_decode('no-decoding-needed')
+no-decoding-needed
+# round-trip
+SELECT vsql_http.url_decode(vsql_http.url_encode('hello world & more'));
+vsql_http.url_decode(vsql_http.url_encode('hello world & more'))
+hello world & more
+# NULL handling
+SELECT vsql_http.url_encode(NULL);
+vsql_http.url_encode(NULL)
+NULL
+SELECT vsql_http.url_decode(NULL);
+vsql_http.url_decode(NULL)
+NULL
+UNINSTALL EXTENSION vsql_http;

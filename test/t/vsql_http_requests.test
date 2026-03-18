@@ -1,0 +1,54 @@
+--echo # vsql_http — HTTP request tests (local server)
+--echo # Note: VEF STRING functions return binary charset. Wrap with
+--echo # CONVERT(... USING utf8mb4) before passing to JSON_VALUE/JSON_EXTRACT.
+
+INSTALL EXTENSION vsql_http;
+
+# Start a local HTTP server on port 18777 serving MYSQLTEST_VARDIR.
+--exec python3 -m http.server 18777 --directory $MYSQLTEST_VARDIR > /tmp/vsql_http_test.log 2>&1 &
+--exec sleep 1
+
+--echo # http_get: status 200
+SELECT JSON_VALUE(CONVERT(vsql_http.http_get('http://127.0.0.1:18777/') USING utf8mb4), '$.status');
+
+--echo # http_get: content_type field is non-null
+SELECT JSON_VALUE(CONVERT(vsql_http.http_get('http://127.0.0.1:18777/') USING utf8mb4), '$.content_type') IS NOT NULL;
+
+--echo # http_get: response content is non-empty
+SELECT LENGTH(JSON_VALUE(CONVERT(vsql_http.http_get('http://127.0.0.1:18777/') USING utf8mb4), '$.content')) > 0;
+
+--echo # http_get: headers field is a non-empty array
+SELECT JSON_LENGTH(CONVERT(vsql_http.http_get('http://127.0.0.1:18777/') USING utf8mb4), '$.headers') > 0;
+
+--echo # http_request() generic: GET matches http_get
+SELECT JSON_VALUE(CONVERT(vsql_http.http_request('GET', 'http://127.0.0.1:18777/', NULL, NULL, NULL, NULL) USING utf8mb4), '$.status');
+
+--echo # http_request() generic: custom header (AC-2)
+SELECT JSON_VALUE(CONVERT(vsql_http.http_request('GET', 'http://127.0.0.1:18777/', '{"X-Test": "hi"}', NULL, NULL, NULL) USING utf8mb4), '$.status');
+
+--echo # http_request() with explicit timeout option
+SELECT JSON_VALUE(CONVERT(vsql_http.http_request('GET', 'http://127.0.0.1:18777/', NULL, NULL, NULL, '{"timeout": 10}') USING utf8mb4), '$.status');
+
+--echo # http_post: returns a status code
+SELECT JSON_VALUE(CONVERT(vsql_http.http_post('http://127.0.0.1:18777/', 'text/plain', 'hello') USING utf8mb4), '$.status') IS NOT NULL;
+
+--echo # http_delete: returns a status code
+SELECT JSON_VALUE(CONVERT(vsql_http.http_delete('http://127.0.0.1:18777/') USING utf8mb4), '$.status') IS NOT NULL;
+
+--echo # http_put: returns a status code
+SELECT JSON_VALUE(CONVERT(vsql_http.http_put('http://127.0.0.1:18777/', 'text/plain', 'data') USING utf8mb4), '$.status') IS NOT NULL;
+
+--echo # http_patch: returns a status code
+SELECT JSON_VALUE(CONVERT(vsql_http.http_patch('http://127.0.0.1:18777/', 'application/json', '{"x":1}') USING utf8mb4), '$.status') IS NOT NULL;
+
+--echo # NULL url returns NULL
+SELECT vsql_http.http_get(NULL) IS NULL;
+
+--echo # Unreachable host returns NULL (not a crash)
+SELECT vsql_http.http_get('http://127.0.0.1:1/') IS NULL;
+
+# Tear down the local server. mysqltest interprets $() as variable substitution,
+# so use pkill to avoid that. Exit 0 whether or not the process was found.
+--exec pkill -f "http.server 18777"; exit 0
+
+UNINSTALL EXTENSION vsql_http;

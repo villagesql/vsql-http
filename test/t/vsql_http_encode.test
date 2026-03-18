@@ -1,0 +1,25 @@
+--echo # vsql_http — url_encode / url_decode tests
+
+INSTALL EXTENSION vsql_http;
+
+--echo # url_encode: basic cases
+SELECT vsql_http.url_encode('hello world');
+SELECT vsql_http.url_encode('a=1&b=2');
+SELECT vsql_http.url_encode('');
+SELECT vsql_http.url_encode('no-encoding-needed');
+SELECT vsql_http.url_encode('https://example.com/path?q=hello world');
+
+--echo # url_decode: basic cases
+SELECT vsql_http.url_decode('hello%20world');
+SELECT vsql_http.url_decode('a%3D1%26b%3D2');
+SELECT vsql_http.url_decode('');
+SELECT vsql_http.url_decode('no-decoding-needed');
+
+--echo # round-trip
+SELECT vsql_http.url_decode(vsql_http.url_encode('hello world & more'));
+
+--echo # NULL handling
+SELECT vsql_http.url_encode(NULL);
+SELECT vsql_http.url_decode(NULL);
+
+UNINSTALL EXTENSION vsql_http;
