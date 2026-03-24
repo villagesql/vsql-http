@@ -1,6 +1,6 @@
 {
   "name": "vsql_http",
-  "version": "1.0.0",
+  "version": "0.0.1",
   "description": "HTTP client functions for VillageSQL (pgsql-http compatible API)",
   "author": "VillageSQL Contributors",
   "license": "GPL-2.0"

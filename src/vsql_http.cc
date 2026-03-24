@@ -554,7 +554,7 @@ static constexpr size_t kEncodeBufSize = 8 * 1024;
 // Note: VEF does not support function overloading. Each function name maps
 // to exactly one signature. For HTTP calls with custom headers, use http().
 VEF_GENERATE_ENTRY_POINTS(
-    make_extension("vsql_http", "1.0.0")
+    make_extension("vsql_http", "0.0.1")
         .func(make_func<&http_get_1_impl>("http_get")
                   .returns(STRING).param(STRING)
                   .buffer_size(kHttpBufSize).build())
