@@ -1,0 +1,20 @@
+# vsql_http — live HTTPS test against villagesql.com/robots.txt
+# Requires network access. Skip with: --skip-test=vsql_http_live
+INSTALL EXTENSION vsql_http;
+# GET robots.txt: status 200
+SELECT JSON_VALUE(CONVERT(vsql_http.http_get('https://villagesql.com/robots.txt') USING utf8mb4), '$.status');
+JSON_VALUE(CONVERT(vsql_http.http_get('https://villagesql.com/robots.txt') USING utf8mb4), '$.status')
+200
+# content_type is non-null
+SELECT JSON_VALUE(CONVERT(vsql_http.http_get('https://villagesql.com/robots.txt') USING utf8mb4), '$.content_type') IS NOT NULL;
+JSON_VALUE(CONVERT(vsql_http.http_get('https://villagesql.com/robots.txt') USING utf8mb4), '$.content_type') IS NOT NULL
+1
+# response content is non-null
+SELECT JSON_VALUE(CONVERT(vsql_http.http_get('https://villagesql.com/robots.txt') USING utf8mb4), '$.content') IS NOT NULL;
+JSON_VALUE(CONVERT(vsql_http.http_get('https://villagesql.com/robots.txt') USING utf8mb4), '$.content') IS NOT NULL
+1
+# headers array is non-empty
+SELECT JSON_LENGTH(CONVERT(vsql_http.http_get('https://villagesql.com/robots.txt') USING utf8mb4), '$.headers') > 0;
+JSON_LENGTH(CONVERT(vsql_http.http_get('https://villagesql.com/robots.txt') USING utf8mb4), '$.headers') > 0
+1
+UNINSTALL EXTENSION vsql_http;

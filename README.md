@@ -86,6 +86,41 @@ SELECT vsql_http.url_decode('hello%20world%20%26%20more');
 -- → hello world & more
 ```
 
+### Syncing to External APIs via Triggers
+
+HTTP functions work inside triggers, making it straightforward to push row changes to REST APIs or webhook endpoints.
+
+```sql
+DELIMITER $$
+CREATE TRIGGER after_order_insert
+  AFTER INSERT ON orders
+  FOR EACH ROW
+BEGIN
+  SET @payload = JSON_OBJECT(
+    'id',       NEW.id,
+    'customer', NEW.customer_id,
+    'total',    NEW.total
+  );
+  -- Fire-and-forget: NULL return means connection failed
+  SET @ignored = vsql_http.http_post(
+    'https://hooks.example.com/orders',
+    'application/json',
+    @payload
+  );
+END$$
+DELIMITER ;
+```
+
+The call is synchronous — the trigger blocks until the request completes or times out. Use `http_request()` with an options JSON to control the deadline:
+
+```sql
+SET @ignored = vsql_http.http_request(
+  'POST', 'https://hooks.example.com/orders',
+  NULL, @payload, 'application/json',
+  '{"timeout": 5}'
+);
+```
+
 ### Extracting Response Fields
 
 ```sql
@@ -141,8 +176,10 @@ SELECT JSON_LENGTH(@resp, '$.headers');
 ## Testing
 
 The MTR test suite (`test/`) covers urlencode/urldecode correctness and all HTTP
-methods. HTTP tests run against a local `python3 -m http.server` instance started
-and torn down within the test — no external network access is required.
+methods. HTTP tests run against a local `python3 -m http.server` instance — no
+external network access required. A separate `vsql_http_live` test hits
+`https://villagesql.com/robots.txt` to verify real HTTPS end-to-end; skip it
+when offline with `--skip-test=vsql_http_live`.
 
 ### Option 1 (Default): Using installed VEB
 
@@ -209,10 +246,6 @@ typical API responses used in SQL queries.
 function name. To pass custom headers, use the generic `http()` function instead
 of `http_get()`.
 → [Open issue](https://github.com/villagesql/villagesql-server/issues/new?title=VEF:+support+function+overloading+%28multiple+VDF+signatures+with+same+name%2C+different+arity%29)
-
-**Connection timeout**: Requests time out after 30 seconds. There is no per-call
-timeout configuration.
-→ [Open issue](https://github.com/villagesql/villagesql-server/issues/new?title=VEF:+per-call+options+mechanism+for+VDF+functions+%28timeout%2C+SSL%2C+etc.%29)
 
 **`alt_str_buf` not populated**: VEF's `alt_str_buf` field in `vef_vdf_result_t`
 is designed for variable-length zero-copy string returns, but the server never
