@@ -175,7 +175,7 @@ SELECT JSON_LENGTH(@resp, '$.headers');
 
 ## Testing
 
-The MTR test suite (`test/`) covers urlencode/urldecode correctness and all HTTP
+The MTR test suite (`mysql-test/`) covers urlencode/urldecode correctness and all HTTP
 methods. HTTP tests run against a local `python3 -m http.server` instance — no
 external network access required. A separate `vsql_http_live` test hits
 `https://villagesql.com/robots.txt` to verify real HTTPS end-to-end; skip it
@@ -186,13 +186,13 @@ when offline with `--skip-test=vsql_http_live`.
 **Linux:**
 ```bash
 cd $HOME/build/villagesql/mysql-test
-perl mysql-test-run.pl --suite=/path/to/vsql_http/test
+perl mysql-test-run.pl --suite=/path/to/vsql_http/mysql-test
 ```
 
 **macOS:**
 ```bash
 cd ~/build/villagesql/mysql-test
-perl mysql-test-run.pl --suite=/path/to/vsql_http/test
+perl mysql-test-run.pl --suite=/path/to/vsql_http/mysql-test
 ```
 
 ### Option 2: Using a specific VEB file
@@ -201,14 +201,14 @@ perl mysql-test-run.pl --suite=/path/to/vsql_http/test
 ```bash
 cd $HOME/build/villagesql/mysql-test
 VSQL_HTTP_VEB=/path/to/vsql_http/build/vsql_http.veb \
-  perl mysql-test-run.pl --suite=/path/to/vsql_http/test
+  perl mysql-test-run.pl --suite=/path/to/vsql_http/mysql-test
 ```
 
 **macOS:**
 ```bash
 cd ~/build/villagesql/mysql-test
 VSQL_HTTP_VEB=/path/to/vsql_http/build/vsql_http.veb \
-  perl mysql-test-run.pl --suite=/path/to/vsql_http/test
+  perl mysql-test-run.pl --suite=/path/to/vsql_http/mysql-test
 ```
 
 See [TESTING.md](TESTING.md) for full instructions including result file regeneration.
@@ -221,7 +221,7 @@ vsql_http/
 │   └── vsql_http.cc        # VDF implementations and extension registration
 ├── cmake/
 │   └── FindVillageSQL.cmake
-├── test/
+├── mysql-test/
 │   ├── suite.opt
 │   ├── t/                  # MTR test files
 │   └── r/                  # MTR expected results
