@@ -50,8 +50,8 @@ See `AGENTS.local.md` for machine-specific build paths and configurations.
 - `manifest.json` - Extension metadata (name, version, description, author, license)
 - `CMakeLists.txt` - CMake build configuration
 - `cmake/FindVillageSQL.cmake` - CMake module to locate VillageSQL SDK
-- `test/t/` - Test files directory (`.test` files using MTR framework)
-- `test/r/` - Expected test results directory (`.result` files)
+- `mysql-test/t/` - Test files directory (`.test` files using MTR framework)
+- `mysql-test/r/` - Expected test results directory (`.result` files)
 
 **Available Functions:**
 - `http_get(url)` - GET request
@@ -148,8 +148,8 @@ VEF_GENERATE_ENTRY_POINTS(
 
 The extension includes test files using the MySQL Test Runner (MTR) framework:
 - **Test Location**:
-  - `test/t/` directory contains `.test` files with SQL test commands
-  - `test/r/` directory contains `.result` files with expected output
+  - `mysql-test/t/` directory contains `.test` files with SQL test commands
+  - `mysql-test/r/` directory contains `.result` files with expected output
 - **Test Files**:
   - `vsql_http_encode.test` - Tests URL encode/decode functions
   - `vsql_http_requests.test` - Tests all HTTP methods against a local `python3 -m http.server`
@@ -163,7 +163,7 @@ This method assumes the VEB is already installed to your VillageSQL veb_dir:
 
 ```bash
 cd /path/to/mysql-test
-perl mysql-test-run.pl --suite=/path/to/vsql-http/test
+perl mysql-test-run.pl --suite=/path/to/vsql-http/mysql-test
 ```
 
 **Option 2: Using a specific VEB file**
@@ -173,7 +173,7 @@ Use this to test a specific VEB build without installing it first:
 ```bash
 cd /path/to/mysql-test
 VSQL_HTTP_VEB=/path/to/vsql-http/build/vsql_http.veb \
-  perl mysql-test-run.pl --suite=/path/to/vsql-http/test
+  perl mysql-test-run.pl --suite=/path/to/vsql-http/mysql-test
 ```
 
 ### Creating or Updating Test Results
@@ -183,7 +183,7 @@ Use `--record` flag to generate or update expected `.result` files:
 ```bash
 cd /path/to/mysql-test
 VSQL_HTTP_VEB=/path/to/vsql-http/build/vsql_http.veb \
-  perl mysql-test-run.pl --suite=/path/to/vsql-http/test --record
+  perl mysql-test-run.pl --suite=/path/to/vsql-http/mysql-test --record
 ```
 
 ### Test Guidelines
@@ -223,7 +223,7 @@ To add new functions to this extension:
    - Use `make_func<&func_impl>("function_name")` with appropriate `.returns()`, `.param()`, and `.buffer_size()` settings
 
 3. **Create tests**:
-   - Add tests to existing test files or create new `.test` files in `test/t/`
+   - Add tests to existing test files or create new `.test` files in `mysql-test/t/`
    - Generate expected results using `--record` flag
    - Test various inputs including edge cases, NULL values, and error conditions
 
@@ -262,7 +262,7 @@ When asked to add functionality to this extension:
 2. **Modifying build**: Edit CMakeLists.txt, ensure proper library linking
 3. **Adding dependencies**: Update CMakeLists.txt with find_package() or target_link_libraries()
 4. **Testing**:
-   - Create or update `.test` files in `test/t/` directory
+   - Create or update `.test` files in `mysql-test/t/` directory
    - Generate expected results with `--record` flag
    - Verify all tests pass with `perl mysql-test-run.pl --suite=<path>`
 5. **Documentation**: Update README.md and AGENTS.md to reflect new functionality

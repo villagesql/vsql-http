@@ -7,7 +7,7 @@ Tests use MTR (MySQL Test Runner). Run from the server's `mysql-test/` directory
 ```bash
 cd /path/to/villagesql/build/mysql-test
 
-perl mysql-test-run.pl --suite=/path/to/vsql_http/test
+perl mysql-test-run.pl --suite=/path/to/vsql_http/mysql-test
 ```
 
 All 3 tests should pass offline:
@@ -19,7 +19,7 @@ A fourth test requires network access:
 
 Skip it when offline:
 ```bash
-perl mysql-test-run.pl --suite=/path/to/vsql_http/test --skip-test=vsql_http_live
+perl mysql-test-run.pl --suite=/path/to/vsql_http/mysql-test --skip-test=vsql_http_live
 ```
 
 ## Regenerate result files
@@ -27,7 +27,7 @@ perl mysql-test-run.pl --suite=/path/to/vsql_http/test --skip-test=vsql_http_liv
 If you change the extension and the expected output changes:
 
 ```bash
-perl mysql-test-run.pl --suite=/path/to/vsql_http/test --record
+perl mysql-test-run.pl --suite=/path/to/vsql_http/mysql-test --record
 ```
 
 ## What the tests cover
