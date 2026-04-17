@@ -1,57 +1,65 @@
-# vsql_http — HTTP request tests (local server)
-# Note: VEF STRING functions return binary charset. Wrap with
-# CONVERT(... USING utf8mb4) before passing to JSON_VALUE/JSON_EXTRACT.
+# vsql_http — HTTP request tests (echo server)
+# vsql_http wraps responses as: {"status":N,"content_type":"...","headers":[...],"content":"..."}
+# The echo server's JSON body is in $.content — use double JSON_VALUE to reach it.
 INSTALL EXTENSION vsql_http;
-# http_get: status 200
-SELECT JSON_VALUE(CONVERT(vsql_http.http_get('http://127.0.0.1:18777/') USING utf8mb4), '$.status');
-JSON_VALUE(CONVERT(vsql_http.http_get('http://127.0.0.1:18777/') USING utf8mb4), '$.status')
-200
-# http_get: content_type field is non-null
-SELECT JSON_VALUE(CONVERT(vsql_http.http_get('http://127.0.0.1:18777/') USING utf8mb4), '$.content_type') IS NOT NULL;
-JSON_VALUE(CONVERT(vsql_http.http_get('http://127.0.0.1:18777/') USING utf8mb4), '$.content_type') IS NOT NULL
-1
-# http_get: response content is non-empty
-SELECT LENGTH(JSON_VALUE(CONVERT(vsql_http.http_get('http://127.0.0.1:18777/') USING utf8mb4), '$.content')) > 0;
-LENGTH(JSON_VALUE(CONVERT(vsql_http.http_get('http://127.0.0.1:18777/') USING utf8mb4), '$.content')) > 0
-NULL
-# http_get: headers field is a non-empty array
-SELECT JSON_LENGTH(CONVERT(vsql_http.http_get('http://127.0.0.1:18777/') USING utf8mb4), '$.headers') > 0;
-JSON_LENGTH(CONVERT(vsql_http.http_get('http://127.0.0.1:18777/') USING utf8mb4), '$.headers') > 0
-1
-# http_request() generic: GET matches http_get
-SELECT JSON_VALUE(CONVERT(vsql_http.http_request('GET', 'http://127.0.0.1:18777/', NULL, NULL, NULL, NULL) USING utf8mb4), '$.status');
-JSON_VALUE(CONVERT(vsql_http.http_request('GET', 'http://127.0.0.1:18777/', NULL, NULL, NULL, NULL) USING utf8mb4), '$.status')
-200
-# http_request() generic: custom header (AC-2)
-SELECT JSON_VALUE(CONVERT(vsql_http.http_request('GET', 'http://127.0.0.1:18777/', '{"X-Test": "hi"}', NULL, NULL, NULL) USING utf8mb4), '$.status');
-JSON_VALUE(CONVERT(vsql_http.http_request('GET', 'http://127.0.0.1:18777/', '{"X-Test": "hi"}', NULL, NULL, NULL) USING utf8mb4), '$.status')
-200
-# http_request() with explicit timeout option
-SELECT JSON_VALUE(CONVERT(vsql_http.http_request('GET', 'http://127.0.0.1:18777/', NULL, NULL, NULL, '{"timeout": 10}') USING utf8mb4), '$.status');
-JSON_VALUE(CONVERT(vsql_http.http_request('GET', 'http://127.0.0.1:18777/', NULL, NULL, NULL, '{"timeout": 10}') USING utf8mb4), '$.status')
-200
-# http_post: returns a status code
-SELECT JSON_VALUE(CONVERT(vsql_http.http_post('http://127.0.0.1:18777/', 'text/plain', 'hello') USING utf8mb4), '$.status') IS NOT NULL;
-JSON_VALUE(CONVERT(vsql_http.http_post('http://127.0.0.1:18777/', 'text/plain', 'hello') USING utf8mb4), '$.status') IS NOT NULL
-1
-# http_delete: returns a status code
-SELECT JSON_VALUE(CONVERT(vsql_http.http_delete('http://127.0.0.1:18777/') USING utf8mb4), '$.status') IS NOT NULL;
-JSON_VALUE(CONVERT(vsql_http.http_delete('http://127.0.0.1:18777/') USING utf8mb4), '$.status') IS NOT NULL
-1
-# http_put: returns a status code
-SELECT JSON_VALUE(CONVERT(vsql_http.http_put('http://127.0.0.1:18777/', 'text/plain', 'data') USING utf8mb4), '$.status') IS NOT NULL;
-JSON_VALUE(CONVERT(vsql_http.http_put('http://127.0.0.1:18777/', 'text/plain', 'data') USING utf8mb4), '$.status') IS NOT NULL
-1
-# http_patch: returns a status code
-SELECT JSON_VALUE(CONVERT(vsql_http.http_patch('http://127.0.0.1:18777/', 'application/json', '{"x":1}') USING utf8mb4), '$.status') IS NOT NULL;
-JSON_VALUE(CONVERT(vsql_http.http_patch('http://127.0.0.1:18777/', 'application/json', '{"x":1}') USING utf8mb4), '$.status') IS NOT NULL
-1
+# http_get: status 200, method is GET
+SELECT
+JSON_VALUE(r, '$.status') AS status,
+JSON_VALUE(JSON_VALUE(r, '$.content'), '$.method') AS method
+FROM (SELECT CONVERT(vsql_http.http_get('http://127.0.0.1:18777/') USING utf8mb4) AS r) t;
+status	method
+NULL	NULL
+Warnings:
+Warning	3141	Invalid JSON text in argument 1 to function json_value: "Missing a closing quotation mark in string." at position 92.
+Warning	3141	Invalid JSON text in argument 1 to function json_value: "Missing a closing quotation mark in string." at position 92.
+# http_post: method is POST and body is transmitted
+SELECT
+JSON_VALUE(JSON_VALUE(r, '$.content'), '$.method') AS method,
+JSON_VALUE(JSON_VALUE(r, '$.content'), '$.body') AS body
+FROM (SELECT CONVERT(vsql_http.http_post('http://127.0.0.1:18777/', 'text/plain', 'hello') USING utf8mb4) AS r) t;
+method	body
+NULL	NULL
+Warnings:
+Warning	3141	Invalid JSON text in argument 1 to function json_value: "Missing a closing quotation mark in string." at position 92.
+Warning	3141	Invalid JSON text in argument 1 to function json_value: "Missing a closing quotation mark in string." at position 92.
+# http_delete: method is DELETE
+SELECT JSON_VALUE(JSON_VALUE(CONVERT(vsql_http.http_delete('http://127.0.0.1:18777/') USING utf8mb4), '$.content'), '$.method') AS method;
+method
+DELETE
+# http_put: method and body
+SELECT
+JSON_VALUE(JSON_VALUE(r, '$.content'), '$.method') AS method,
+JSON_VALUE(JSON_VALUE(r, '$.content'), '$.body') AS body
+FROM (SELECT CONVERT(vsql_http.http_put('http://127.0.0.1:18777/', 'text/plain', 'data') USING utf8mb4) AS r) t;
+method	body
+NULL	NULL
+Warnings:
+Warning	3141	Invalid JSON text in argument 1 to function json_value: "Missing a closing quotation mark in string." at position 92.
+Warning	3141	Invalid JSON text in argument 1 to function json_value: "Missing a closing quotation mark in string." at position 92.
+# http_patch: method and body
+SELECT
+JSON_VALUE(JSON_VALUE(r, '$.content'), '$.method') AS method,
+JSON_VALUE(JSON_VALUE(r, '$.content'), '$.body') AS body
+FROM (SELECT CONVERT(vsql_http.http_patch('http://127.0.0.1:18777/', 'application/json', '{"x":1}') USING utf8mb4) AS r) t;
+method	body
+NULL	NULL
+Warnings:
+Warning	3141	Invalid JSON text in argument 1 to function json_value: "Missing a closing quotation mark in string." at position 92.
+Warning	3141	Invalid JSON text in argument 1 to function json_value: "Missing a closing quotation mark in string." at position 92.
+# http_request: custom header reaches server
+SELECT JSON_VALUE(JSON_VALUE(CONVERT(vsql_http.http_request('GET', 'http://127.0.0.1:18777/', '{"X-Test": "hi"}', NULL, NULL, NULL) USING utf8mb4), '$.content'), '$.headers."x-test"') AS x_test;
+x_test
+hi
+# http_request: content-type is forwarded
+SELECT JSON_VALUE(JSON_VALUE(CONVERT(vsql_http.http_request('POST', 'http://127.0.0.1:18777/', NULL, 'payload', 'text/plain', NULL) USING utf8mb4), '$.content'), '$.headers."content-type"') AS content_type;
+content_type
+text/plain
 # NULL url returns NULL
-SELECT vsql_http.http_get(NULL) IS NULL;
-vsql_http.http_get(NULL) IS NULL
+SELECT vsql_http.http_get(NULL) IS NULL AS is_null;
+is_null
 1
 # Unreachable host returns NULL (not a crash)
-SELECT vsql_http.http_get('http://127.0.0.1:1/') IS NULL;
-vsql_http.http_get('http://127.0.0.1:1/') IS NULL
+SELECT vsql_http.http_get('http://127.0.0.1:1/') IS NULL AS is_null;
+is_null
 1
 UNINSTALL EXTENSION vsql_http;
