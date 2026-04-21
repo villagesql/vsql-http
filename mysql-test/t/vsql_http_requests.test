@@ -81,7 +81,7 @@ SELECT vsql_http.http_get(NULL) IS NULL AS is_null;
 --echo # Unreachable host returns NULL (not a crash)
 SELECT vsql_http.http_get('http://127.0.0.1:1/') IS NULL AS is_null;
 
---exec pkill -f "echo_server.py" || true
+--exec pkill -f "python3.*echo_server" || true
 --remove_file $MYSQLTEST_VARDIR/tmp/echo_server.py
 --remove_file $MYSQLTEST_VARDIR/tmp/wait_port.py
 
