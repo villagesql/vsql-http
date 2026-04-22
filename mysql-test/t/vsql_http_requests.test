@@ -27,7 +27,8 @@ class H(http.server.BaseHTTPRequestHandler):
     def log_message(self, *args): pass
 # Write a stop script so cleanup can kill by PID rather than by name pattern.
 _dir = os.path.dirname(os.path.abspath(__file__))
-open(os.path.join(_dir, 'stop_echo.sh'), 'w').write('kill %d\n' % os.getpid())
+with open(os.path.join(_dir, 'stop_echo.sh'), 'w') as f:
+    f.write('kill %d\n' % os.getpid())
 http.server.HTTPServer(('127.0.0.1', 18777), H).serve_forever()
 EOF
 
