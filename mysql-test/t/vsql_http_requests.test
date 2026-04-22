@@ -7,7 +7,7 @@ INSTALL EXTENSION vsql_http;
 # echo_server.py reflects requests as JSON {method, path, headers, body}.
 # wait_port.py polls instead of sleep — no fixed delay needed.
 --write_file $MYSQLTEST_VARDIR/tmp/echo_server.py
-import http.server, json
+import http.server, json, os
 class H(http.server.BaseHTTPRequestHandler):
     def handle_any(self):
         n = int(self.headers.get('Content-Length', 0))
@@ -25,6 +25,10 @@ class H(http.server.BaseHTTPRequestHandler):
         self.wfile.write(payload)
     do_GET = do_POST = do_PUT = do_DELETE = do_PATCH = handle_any
     def log_message(self, *args): pass
+# Write a stop script so cleanup can kill by PID rather than by name pattern.
+_dir = os.path.dirname(os.path.abspath(__file__))
+with open(os.path.join(_dir, 'stop_echo.sh'), 'w') as f:
+    f.write('kill %d\n' % os.getpid())
 http.server.HTTPServer(('127.0.0.1', 18777), H).serve_forever()
 EOF
 
@@ -81,7 +85,9 @@ SELECT vsql_http.http_get(NULL) IS NULL AS is_null;
 --echo # Unreachable host returns NULL (not a crash)
 SELECT vsql_http.http_get('http://127.0.0.1:1/') IS NULL AS is_null;
 
---exec pkill -f "python3.*echo_server" || true
+# Kill the echo server by PID (avoids pkill self-matching on Linux via /proc cmdline).
+--exec sh $MYSQLTEST_VARDIR/tmp/stop_echo.sh 2>/dev/null || true
+--remove_file $MYSQLTEST_VARDIR/tmp/stop_echo.sh
 --remove_file $MYSQLTEST_VARDIR/tmp/echo_server.py
 --remove_file $MYSQLTEST_VARDIR/tmp/wait_port.py
 
