@@ -71,7 +71,7 @@ All functions return NULL on connection failure or NULL input.
 **Error Handling:**
 - HTTP functions return NULL on curl-level failure (connection refused, DNS failure, timeout)
 - `url_encode`/`url_decode` return NULL for NULL input or curl init failure
-- Exceptions are caught and returned as `VEF_RESULT_ERROR`
+- Exceptions are caught and surfaced as Warning 3200 via `result.warning()`
 
 **Key Implementation Details:**
 - Thread-local curl handles with connection keep-alive (`curl_easy_reset()` between calls)
@@ -83,7 +83,7 @@ All functions return NULL on connection failure or NULL input.
 - Options JSON supports: `timeout` (int), `proxy`, `user_agent`, `ssl_cert`, `ssl_key`, `ssl_ca_bundle` (strings)
 
 **Dependencies:**
-- VillageSQL Extension Framework SDK (`<villagesql/extension.h>`)
+- VillageSQL Extension Framework SDK (`<villagesql/vsql.h>`, Protocol V3)
 - libcurl (system-provided)
 
 **Code Organization:**
@@ -91,58 +91,37 @@ All functions return NULL on connection failure or NULL input.
 - Function naming: lowercase with underscores (e.g., `http_get_1_impl`)
 - Variable naming: lowercase with underscores (e.g., `response_body`)
 
-## VillageSQL Extension Framework (VEF) API Pattern
+## VillageSQL Extension Framework (VEF) API Pattern — Protocol V3
+
+This extension uses the Protocol V3 stable SDK (`<villagesql/vsql.h>`).
 
 ### Function Implementation Pattern
 
 ```cpp
-void my_function_impl(vef_context_t* ctx,
-                      vef_invalue_t* arg1, vef_invalue_t* arg2,
-                      vef_vdf_result_t* result) {
-    // Check for NULL arguments
-    if (arg1->is_null || arg2->is_null) {
-        result->type = VEF_RESULT_NULL;
-        return;
-    }
+#include <villagesql/vsql.h>
+using namespace vsql;
 
-    // Access argument values
-    const char* str_value = arg1->str_value;
-    size_t str_len = arg1->str_len;
-
-    // Perform function logic
+void my_function_impl(StringArg arg1, StringArg arg2, StringResult result) {
+    if (arg1.is_null() || arg2.is_null()) { result.set_null(); return; }
+    std::string_view s1 = arg1.value();
     // ...
-
-    // Set result
-    result->type = VEF_RESULT_VALUE;
-    result->actual_len = result_length;
-    // Write to result->str_buf
+    result.set(output);  // or result.set_length(n) after writing to result.buffer()
 }
 ```
+
+Typed argument wrappers: `StringArg`, `IntArg`, `RealArg`. Result wrappers: `StringResult`, `IntResult`, `RealResult`. Use `result.set_null()` for NULL, `result.warning("msg")` for soft errors (Warning 3200), `result.error("msg")` for hard errors (ERROR 3200).
 
 ### Function Registration Pattern
 
 ```cpp
-#include <villagesql/extension.h>
-
-using namespace villagesql::extension_builder;
-
 VEF_GENERATE_ENTRY_POINTS(
-  make_extension("extension_name", "0.0.1")
+  make_extension()
     .func(make_func<&my_function_impl>("my_function")
-      .returns(STRING)  // or INT, etc.
-      .param(STRING)    // add .param() for each parameter
-      .param(INT)
-      .buffer_size(1024)  // max result size
-      .build())
+      .returns(STRING).param(STRING).param(INT).buffer_size(1024).build())
 )
 ```
 
-### Key Differences from Old MySQL UDF API:
-- No separate init/main/deinit functions - single implementation function
-- Arguments passed as `vef_invalue_t*` structs with `is_null`, `str_value`, `bin_value`, `int_value` fields
-- Results set via `vef_vdf_result_t*` with `type`, `str_buf`, `bin_buf`, `actual_len` fields
-- Function registration done declaratively in code using builder pattern
-- No install.sql needed - functions registered at extension load time
+Extension name and version come from `manifest.json`; `make_extension()` takes no arguments in V3.
 
 ## Testing
 
