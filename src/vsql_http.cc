@@ -404,12 +404,18 @@ static std::string do_http(std::string_view method, std::string_view url,
 // Shared wrapper: null-checks url, calls fn() to get the result string,
 // handles NULL/empty/error outcomes, and writes to the result buffer.
 template <typename Fn>
-static void http_call(StringArg url, StringResult result,
-                      const char *func_name, Fn fn) {
+static void http_call(StringArg url, StringResult result, const char *func_name,
+                      Fn fn) {
   try {
-    if (url.is_null()) { result.set_null(); return; }
+    if (url.is_null()) {
+      result.set_null();
+      return;
+    }
     std::string r = fn();
-    if (r.empty()) { result.set_null(); return; }
+    if (r.empty()) {
+      result.set_null();
+      return;
+    }
     result.set(r);
   } catch (...) {
     result.warning(std::string(func_name) + ": internal error");
@@ -422,7 +428,7 @@ static void http_get_1_impl(StringArg url, StringResult result) {
 }
 
 static void http_post_3_impl(StringArg url, StringArg ct, StringArg body,
-                              StringResult result) {
+                             StringResult result) {
   http_call(url, result, "http_post", [&] {
     return do_http("POST", url.value(), {},
                    body.is_null() ? std::string_view{} : body.value(),
@@ -431,7 +437,7 @@ static void http_post_3_impl(StringArg url, StringArg ct, StringArg body,
 }
 
 static void http_put_3_impl(StringArg url, StringArg ct, StringArg body,
-                             StringResult result) {
+                            StringResult result) {
   http_call(url, result, "http_put", [&] {
     return do_http("PUT", url.value(), {},
                    body.is_null() ? std::string_view{} : body.value(),
@@ -445,7 +451,7 @@ static void http_delete_1_impl(StringArg url, StringResult result) {
 }
 
 static void http_patch_3_impl(StringArg url, StringArg ct, StringArg body,
-                               StringResult result) {
+                              StringResult result) {
   http_call(url, result, "http_patch", [&] {
     return do_http("PATCH", url.value(), {},
                    body.is_null() ? std::string_view{} : body.value(),
@@ -458,18 +464,17 @@ static void http_patch_3_impl(StringArg url, StringArg ct, StringArg body,
 //   proxy, user_agent, ssl_cert, ssl_key, ssl_ca_bundle (all strings).
 // Example: '{"timeout": 5, "proxy": "http://proxy:8080"}'
 static void http_6_impl(StringArg method, StringArg url, StringArg hdrs,
-                         StringArg body, StringArg ct, StringArg options,
-                         StringResult result) {
+                        StringArg body, StringArg ct, StringArg options,
+                        StringResult result) {
   http_call(url, result, "http_request", [&] {
-    std::string_view m = method.is_null() ? std::string_view{"GET"}
-                                          : method.value();
-    HttpOptions opts = options.is_null() ? HttpOptions{}
-                                         : parse_options(options.value());
+    std::string_view m =
+        method.is_null() ? std::string_view{"GET"} : method.value();
+    HttpOptions opts =
+        options.is_null() ? HttpOptions{} : parse_options(options.value());
     return do_http(m, url.value(),
                    hdrs.is_null() ? std::string_view{} : hdrs.value(),
                    body.is_null() ? std::string_view{} : body.value(),
-                   ct.is_null() ? std::string_view{} : ct.value(),
-                   opts);
+                   ct.is_null() ? std::string_view{} : ct.value(), opts);
   });
 }
 
@@ -478,13 +483,22 @@ static void http_6_impl(StringArg method, StringArg url, StringArg hdrs,
 // byte count. Returns NULL to the caller on curl init failure or op failure.
 template <typename Op>
 static void curl_codec_impl(StringArg input, StringResult result,
-                             const char *func_name, Op op) {
+                            const char *func_name, Op op) {
   try {
-    if (input.is_null()) { result.set_null(); return; }
+    if (input.is_null()) {
+      result.set_null();
+      return;
+    }
     CURL *curl = get_curl_handle();
-    if (!curl) { result.set_null(); return; }
+    if (!curl) {
+      result.set_null();
+      return;
+    }
     auto [buf, buf_len] = op(curl, input.value());
-    if (!buf) { result.set_null(); return; }
+    if (!buf) {
+      result.set_null();
+      return;
+    }
     auto dst = result.buffer();
     size_t copy_len = buf_len < dst.size() ? buf_len : dst.size();
     memcpy(dst.data(), buf, copy_len);
@@ -497,19 +511,22 @@ static void curl_codec_impl(StringArg input, StringResult result,
 
 // urlencode(text) — percent-encode a string using curl_easy_escape.
 static void urlencode_impl(StringArg input, StringResult result) {
-  curl_codec_impl(input, result, "urlencode", [&](CURL *c, std::string_view sv) {
-    char *r = curl_easy_escape(c, sv.data(), static_cast<int>(sv.size()));
-    return std::pair<char *, size_t>{r, r ? strlen(r) : 0};
-  });
+  curl_codec_impl(
+      input, result, "urlencode", [&](CURL *c, std::string_view sv) {
+        char *r = curl_easy_escape(c, sv.data(), static_cast<int>(sv.size()));
+        return std::pair<char *, size_t>{r, r ? strlen(r) : 0};
+      });
 }
 
 // urldecode(text) — decode a percent-encoded string using curl_easy_unescape.
 static void urldecode_impl(StringArg input, StringResult result) {
-  curl_codec_impl(input, result, "urldecode", [&](CURL *c, std::string_view sv) {
-    int n = 0;
-    char *r = curl_easy_unescape(c, sv.data(), static_cast<int>(sv.size()), &n);
-    return std::pair<char *, size_t>{r, static_cast<size_t>(n)};
-  });
+  curl_codec_impl(
+      input, result, "urldecode", [&](CURL *c, std::string_view sv) {
+        int n = 0;
+        char *r =
+            curl_easy_unescape(c, sv.data(), static_cast<int>(sv.size()), &n);
+        return std::pair<char *, size_t>{r, static_cast<size_t>(n)};
+      });
 }
 
 // ============================================================
@@ -528,27 +545,53 @@ static constexpr size_t kEncodeBufSize = 8 * 1024;
 VEF_GENERATE_ENTRY_POINTS(
     make_extension()
         .func(make_func<&http_get_1_impl>("http_get")
-                  .returns(STRING).param(STRING)
-                  .buffer_size(kHttpBufSize).build())
+                  .returns(STRING)
+                  .param(STRING)
+                  .buffer_size(kHttpBufSize)
+                  .build())
         .func(make_func<&http_post_3_impl>("http_post")
-                  .returns(STRING).param(STRING).param(STRING).param(STRING)
-                  .buffer_size(kHttpBufSize).build())
+                  .returns(STRING)
+                  .param(STRING)
+                  .param(STRING)
+                  .param(STRING)
+                  .buffer_size(kHttpBufSize)
+                  .build())
         .func(make_func<&http_put_3_impl>("http_put")
-                  .returns(STRING).param(STRING).param(STRING).param(STRING)
-                  .buffer_size(kHttpBufSize).build())
+                  .returns(STRING)
+                  .param(STRING)
+                  .param(STRING)
+                  .param(STRING)
+                  .buffer_size(kHttpBufSize)
+                  .build())
         .func(make_func<&http_delete_1_impl>("http_delete")
-                  .returns(STRING).param(STRING)
-                  .buffer_size(kHttpBufSize).build())
+                  .returns(STRING)
+                  .param(STRING)
+                  .buffer_size(kHttpBufSize)
+                  .build())
         .func(make_func<&http_patch_3_impl>("http_patch")
-                  .returns(STRING).param(STRING).param(STRING).param(STRING)
-                  .buffer_size(kHttpBufSize).build())
+                  .returns(STRING)
+                  .param(STRING)
+                  .param(STRING)
+                  .param(STRING)
+                  .buffer_size(kHttpBufSize)
+                  .build())
         .func(make_func<&http_6_impl>("http_request")
-                  .returns(STRING).param(STRING).param(STRING).param(STRING)
-                  .param(STRING).param(STRING).param(STRING)
-                  .buffer_size(kHttpBufSize).build())
+                  .returns(STRING)
+                  .param(STRING)
+                  .param(STRING)
+                  .param(STRING)
+                  .param(STRING)
+                  .param(STRING)
+                  .param(STRING)
+                  .buffer_size(kHttpBufSize)
+                  .build())
         .func(make_func<&urlencode_impl>("url_encode")
-                  .returns(STRING).param(STRING)
-                  .buffer_size(kEncodeBufSize).build())
+                  .returns(STRING)
+                  .param(STRING)
+                  .buffer_size(kEncodeBufSize)
+                  .build())
         .func(make_func<&urldecode_impl>("url_decode")
-                  .returns(STRING).param(STRING)
-                  .buffer_size(kEncodeBufSize).build()))
+                  .returns(STRING)
+                  .param(STRING)
+                  .buffer_size(kEncodeBufSize)
+                  .build()))
