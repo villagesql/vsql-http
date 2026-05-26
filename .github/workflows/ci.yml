@@ -9,8 +9,9 @@ jobs:
       actions: read
     steps:
       - uses: actions/checkout@v4
+      - name: Install libcurl
+        run: sudo apt-get install -y --no-install-recommends libcurl4-openssl-dev
       - uses: villagesql/extension-actions/cpp@main
         with:
           extension-name: vsql_http
           github-token: ${{ secrets.GITHUB_TOKEN }}
-          extra-apt-packages: libcurl4-openssl-dev
