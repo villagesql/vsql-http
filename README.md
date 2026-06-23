@@ -7,7 +7,7 @@ HTTP client functions for VillageSQL. Inspired by [pgsql-http](https://github.co
 - **HTTP methods**: GET, POST, PUT, DELETE, PATCH, and a generic `http_request()` function for any method with custom headers
 - **JSON responses**: every function returns `{"status": N, "content_type": "...", "headers": [["name","value"],...], "content": "..."}`
 - **URL encoding**: `url_encode()` and `url_decode()` for percent-encoding strings
-- **No external dependencies**: uses the system libcurl
+- **Requires libcurl**: links the system libcurl (dev headers must be installed separately on Linux)
 
 ## Installation
 
@@ -16,7 +16,7 @@ HTTP client functions for VillageSQL. Inspired by [pgsql-http](https://github.co
 - VillageSQL build directory (specified via `VillageSQL_BUILD_DIR`)
 - CMake 3.16 or higher
 - C++17 compatible compiler
-- libcurl (macOS system SDK via Xcode Command Line Tools, or any libcurl ≥ 7.x)
+- libcurl development headers: `libcurl4-openssl-dev` (Ubuntu/Debian), `libcurl-devel` (RHEL/Fedora), or Xcode Command Line Tools (macOS)
 
 📚 **Full Documentation**: Visit [villagesql.com/docs](https://villagesql.com/docs) for comprehensive guides on building extensions, architecture details, and more.
 

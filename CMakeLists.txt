@@ -25,7 +25,15 @@ set(EXTENSION_NAME "vsql_http")
 # Find VillageSQL SDK
 list(APPEND CMAKE_MODULE_PATH "${CMAKE_CURRENT_SOURCE_DIR}/cmake")
 find_package(VillageSQL REQUIRED)
-find_package(CURL REQUIRED)
+find_package(CURL)
+if(NOT CURL_FOUND)
+  message(FATAL_ERROR
+    "libcurl development headers not found.\n"
+    "Install the development package and retry:\n"
+    "  Ubuntu/Debian: sudo apt install libcurl4-openssl-dev\n"
+    "  RHEL/Fedora:   sudo dnf install libcurl-devel\n"
+    "  macOS:         included with Xcode Command Line Tools\n")
+endif()
 
 message(STATUS "VillageSQL SDK found at: ${VillageSQL_PREFIX}")
 message(STATUS "VillageSQL include dir: ${VillageSQL_INCLUDE_DIR}")

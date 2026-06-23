@@ -39,7 +39,7 @@ The build process:
 2. Compiles C++ source files into shared library `vsql_http.so`
 3. Packages library with `manifest.json` into `vsql_http.veb` package using `VEF_CREATE_VEB()` macro
 4. VEB can be installed to VillageSQL for use
-5. libcurl is linked during build (system libcurl, no external dependency)
+5. libcurl is linked during build — requires `libcurl4-openssl-dev` (Ubuntu/Debian), `libcurl-devel` (RHEL/Fedora), or Xcode Command Line Tools (macOS)
 
 See `AGENTS.local.md` for machine-specific build paths and configurations.
 
@@ -84,7 +84,7 @@ All functions return NULL on connection failure or NULL input.
 
 **Dependencies:**
 - VillageSQL Extension Framework SDK (`<villagesql/vsql.h>`, Protocol V3)
-- libcurl (system-provided)
+- libcurl: `libcurl4-openssl-dev` (Ubuntu/Debian), `libcurl-devel` (RHEL/Fedora), Xcode Command Line Tools (macOS)
 
 **Code Organization:**
 - File naming: lowercase with underscores (e.g., `vsql_http.cc`)
