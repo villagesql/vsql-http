@@ -4,8 +4,8 @@
 
 INSTALL EXTENSION vsql_http;
 
-# echo_server.py reflects requests as JSON {method, path, headers, body}.
-# wait_port.py polls instead of sleep — no fixed delay needed.
+# echo_server.py binds to port 0 (OS-assigned) and writes the actual port to
+# echo_port.inc so wait_port.py and the test can read it without hardcoding.
 --write_file $MYSQLTEST_VARDIR/tmp/echo_server.py
 import http.server, json, os
 class H(http.server.BaseHTTPRequestHandler):
@@ -25,59 +25,72 @@ class H(http.server.BaseHTTPRequestHandler):
         self.wfile.write(payload)
     do_GET = do_POST = do_PUT = do_DELETE = do_PATCH = handle_any
     def log_message(self, *args): pass
-# Write a stop script so cleanup can kill by PID rather than by name pattern.
 _dir = os.path.dirname(os.path.abspath(__file__))
+srv = http.server.HTTPServer(('127.0.0.1', 0), H)
+port = srv.server_address[1]
+with open(os.path.join(_dir, 'echo_port.inc'), 'w') as f:
+    f.write('let $echo_port = %d;\n' % port)
 with open(os.path.join(_dir, 'stop_echo.sh'), 'w') as f:
     f.write('kill %d\n' % os.getpid())
-http.server.HTTPServer(('127.0.0.1', 18777), H).serve_forever()
+srv.serve_forever()
 EOF
 
 --write_file $MYSQLTEST_VARDIR/tmp/wait_port.py
-import socket, time, sys
+import socket, time, sys, os
+_dir = os.path.dirname(os.path.abspath(__file__))
+port_inc = os.path.join(_dir, 'echo_port.inc')
+port = None
 for _ in range(40):
     try:
-        socket.create_connection(('127.0.0.1', 18777), 0.5).close()
+        if port is None:
+            with open(port_inc) as f:
+                port = int(f.read().split('=')[1].rstrip(';\n '))
+        socket.create_connection(('127.0.0.1', port), 0.5).close()
         sys.exit(0)
-    except OSError:
+    except (OSError, FileNotFoundError, ValueError):
         time.sleep(0.25)
 sys.exit(1)
 EOF
 
 --exec python3 $MYSQLTEST_VARDIR/tmp/echo_server.py > /dev/null 2>&1 &
 --exec python3 $MYSQLTEST_VARDIR/tmp/wait_port.py
+--source $MYSQLTEST_VARDIR/tmp/echo_port.inc
+--disable_query_log
+--eval SET @echo_url = CONCAT('http://127.0.0.1:', $echo_port, '/');
+--enable_query_log
 
 --echo # http_get: status 200, method is GET
 SELECT
   JSON_VALUE(r, '$.status') AS status,
   JSON_VALUE(JSON_VALUE(r, '$.content'), '$.method') AS method
-FROM (SELECT CONVERT(vsql_http.http_get('http://127.0.0.1:18777/') USING utf8mb4) AS r) t;
+FROM (SELECT CONVERT(vsql_http.http_get(@echo_url) USING utf8mb4) AS r) t;
 
 --echo # http_post: method is POST and body is transmitted
 SELECT
   JSON_VALUE(JSON_VALUE(r, '$.content'), '$.method') AS method,
   JSON_VALUE(JSON_VALUE(r, '$.content'), '$.body') AS body
-FROM (SELECT CONVERT(vsql_http.http_post('http://127.0.0.1:18777/', 'text/plain', 'hello') USING utf8mb4) AS r) t;
+FROM (SELECT CONVERT(vsql_http.http_post(@echo_url, 'text/plain', 'hello') USING utf8mb4) AS r) t;
 
 --echo # http_delete: method is DELETE
-SELECT JSON_VALUE(JSON_VALUE(CONVERT(vsql_http.http_delete('http://127.0.0.1:18777/') USING utf8mb4), '$.content'), '$.method') AS method;
+SELECT JSON_VALUE(JSON_VALUE(CONVERT(vsql_http.http_delete(@echo_url) USING utf8mb4), '$.content'), '$.method') AS method;
 
 --echo # http_put: method and body
 SELECT
   JSON_VALUE(JSON_VALUE(r, '$.content'), '$.method') AS method,
   JSON_VALUE(JSON_VALUE(r, '$.content'), '$.body') AS body
-FROM (SELECT CONVERT(vsql_http.http_put('http://127.0.0.1:18777/', 'text/plain', 'data') USING utf8mb4) AS r) t;
+FROM (SELECT CONVERT(vsql_http.http_put(@echo_url, 'text/plain', 'data') USING utf8mb4) AS r) t;
 
 --echo # http_patch: method and body
 SELECT
   JSON_VALUE(JSON_VALUE(r, '$.content'), '$.method') AS method,
   JSON_VALUE(JSON_VALUE(r, '$.content'), '$.body') AS body
-FROM (SELECT CONVERT(vsql_http.http_patch('http://127.0.0.1:18777/', 'application/json', '{"x":1}') USING utf8mb4) AS r) t;
+FROM (SELECT CONVERT(vsql_http.http_patch(@echo_url, 'application/json', '{"x":1}') USING utf8mb4) AS r) t;
 
 --echo # http_request: custom header reaches server
-SELECT JSON_VALUE(JSON_VALUE(CONVERT(vsql_http.http_request('GET', 'http://127.0.0.1:18777/', '{"X-Test": "hi"}', NULL, NULL, NULL) USING utf8mb4), '$.content'), '$.headers."x-test"') AS x_test;
+SELECT JSON_VALUE(JSON_VALUE(CONVERT(vsql_http.http_request('GET', @echo_url, '{"X-Test": "hi"}', NULL, NULL, NULL) USING utf8mb4), '$.content'), '$.headers."x-test"') AS x_test;
 
 --echo # http_request: content-type is forwarded
-SELECT JSON_VALUE(JSON_VALUE(CONVERT(vsql_http.http_request('POST', 'http://127.0.0.1:18777/', NULL, 'payload', 'text/plain', NULL) USING utf8mb4), '$.content'), '$.headers."content-type"') AS content_type;
+SELECT JSON_VALUE(JSON_VALUE(CONVERT(vsql_http.http_request('POST', @echo_url, NULL, 'payload', 'text/plain', NULL) USING utf8mb4), '$.content'), '$.headers."content-type"') AS content_type;
 
 --echo # NULL url returns NULL
 SELECT vsql_http.http_get(NULL) IS NULL AS is_null;
@@ -90,5 +103,6 @@ SELECT vsql_http.http_get('http://127.0.0.1:1/') IS NULL AS is_null;
 --remove_file $MYSQLTEST_VARDIR/tmp/stop_echo.sh
 --remove_file $MYSQLTEST_VARDIR/tmp/echo_server.py
 --remove_file $MYSQLTEST_VARDIR/tmp/wait_port.py
+--remove_file $MYSQLTEST_VARDIR/tmp/echo_port.inc
 
 UNINSTALL EXTENSION vsql_http;
