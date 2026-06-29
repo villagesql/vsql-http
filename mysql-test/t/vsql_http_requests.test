@@ -4,56 +4,75 @@
 
 INSTALL EXTENSION vsql_http;
 
-# echo_server.py binds to port 0 (OS-assigned) and writes the actual port to
-# echo_port.inc so wait_port.py and the test can read it without hardcoding.
+# The foreground launcher spawns a detached --serve child and waits until it
+# has bound a port and written echo_port.inc, then exits 0. Because MTR blocks
+# on the foreground --exec, the server is listening before the next line runs —
+# no polling race, no "&". Server output goes to echo_server.log, not /dev/null,
+# so a startup failure is visible instead of silent.
 --write_file $MYSQLTEST_VARDIR/tmp/echo_server.py
-import http.server, json, os
-class H(http.server.BaseHTTPRequestHandler):
-    def handle_any(self):
-        n = int(self.headers.get('Content-Length', 0))
-        body = self.rfile.read(n).decode() if n else ''
-        self.send_response(200)
-        self.send_header('Content-Type', 'application/json')
-        payload = json.dumps({
-            'method':  self.command,
-            'path':    self.path,
-            'headers': {k.lower(): v for k, v in self.headers.items()},
-            'body':    body,
-        }).encode()
-        self.send_header('Content-Length', len(payload))
-        self.end_headers()
-        self.wfile.write(payload)
-    do_GET = do_POST = do_PUT = do_DELETE = do_PATCH = handle_any
-    def log_message(self, *args): pass
+import sys, os, json, time, threading, subprocess, http.server
 _dir = os.path.dirname(os.path.abspath(__file__))
-srv = http.server.HTTPServer(('127.0.0.1', 0), H)
-port = srv.server_address[1]
-with open(os.path.join(_dir, 'echo_port.inc'), 'w') as f:
-    f.write('let $echo_port = %d;\n' % port)
-with open(os.path.join(_dir, 'stop_echo.sh'), 'w') as f:
-    f.write('kill %d\n' % os.getpid())
-srv.serve_forever()
-EOF
+PORT_INC = os.path.join(_dir, 'echo_port.inc')
+STOP_SH  = os.path.join(_dir, 'stop_echo.sh')
+LOG      = os.path.join(_dir, 'echo_server.log')
 
---write_file $MYSQLTEST_VARDIR/tmp/wait_port.py
-import socket, time, sys, os
-_dir = os.path.dirname(os.path.abspath(__file__))
-port_inc = os.path.join(_dir, 'echo_port.inc')
-port = None
-for _ in range(40):
-    try:
-        if port is None:
-            with open(port_inc) as f:
-                port = int(f.read().split('=')[1].rstrip(';\n '))
-        socket.create_connection(('127.0.0.1', port), 0.5).close()
+def serve():
+    # Backstop: self-exit so a leaked server can't outlive the run if cleanup
+    # is skipped. Tests finish in <1s; 60s is margin.
+    def _watchdog():
+        time.sleep(60)
+        os._exit(0)
+    threading.Thread(target=_watchdog, daemon=True).start()
+    class H(http.server.BaseHTTPRequestHandler):
+        def handle_any(self):
+            n = int(self.headers.get('Content-Length', 0))
+            body = self.rfile.read(n).decode() if n else ''
+            self.send_response(200)
+            self.send_header('Content-Type', 'application/json')
+            payload = json.dumps({
+                'method':  self.command,
+                'path':    self.path,
+                'headers': {k.lower(): v for k, v in self.headers.items()},
+                'body':    body,
+            }).encode()
+            self.send_header('Content-Length', len(payload))
+            self.end_headers()
+            self.wfile.write(payload)
+        do_GET = do_POST = do_PUT = do_DELETE = do_PATCH = handle_any
+        def log_message(self, *a): pass
+    srv = http.server.HTTPServer(('127.0.0.1', 0), H)
+    port = srv.server_address[1]
+    with open(STOP_SH, 'w') as f:
+        f.write('kill %d\n' % os.getpid())
+    # Written last: its existence is the readiness signal (socket is listening).
+    with open(PORT_INC, 'w') as f:
+        f.write('let $echo_port = %d;\n' % port)
+    srv.serve_forever()
+
+if '--serve' in sys.argv:
+    serve()
+    sys.exit(0)
+
+try:
+    os.remove(PORT_INC)            # drop a stale signal from an aborted prior run
+except OSError:
+    pass
+logf = open(LOG, 'w')
+child = subprocess.Popen(
+    [sys.executable, os.path.abspath(__file__), '--serve'],
+    stdout=logf, stderr=logf, start_new_session=True)
+for _ in range(80):               # ready in <1s normally; ~20s ceiling
+    if child.poll() is not None:
+        sys.stderr.write('echo server exited early:\n' + open(LOG).read())
+        sys.exit(1)
+    if os.path.exists(PORT_INC):
         sys.exit(0)
-    except (OSError, FileNotFoundError, ValueError):
-        time.sleep(0.25)
+    time.sleep(0.25)
+sys.stderr.write('echo server not ready in time:\n' + open(LOG).read())
 sys.exit(1)
 EOF
 
---exec python3 $MYSQLTEST_VARDIR/tmp/echo_server.py > /dev/null 2>&1 &
---exec python3 $MYSQLTEST_VARDIR/tmp/wait_port.py
+--exec python3 $MYSQLTEST_VARDIR/tmp/echo_server.py
 --source $MYSQLTEST_VARDIR/tmp/echo_port.inc
 --disable_query_log
 --eval SET @echo_url = CONCAT('http://127.0.0.1:', $echo_port, '/');
@@ -98,11 +117,11 @@ SELECT vsql_http.http_get(NULL) IS NULL AS is_null;
 --echo # Unreachable host returns NULL (not a crash)
 SELECT vsql_http.http_get('http://127.0.0.1:1/') IS NULL AS is_null;
 
-# Kill the echo server by PID (avoids pkill self-matching on Linux via /proc cmdline).
+# Kill the echo server by PID (stop_echo.sh was written by the server child).
 --exec sh $MYSQLTEST_VARDIR/tmp/stop_echo.sh 2>/dev/null || true
 --remove_file $MYSQLTEST_VARDIR/tmp/stop_echo.sh
 --remove_file $MYSQLTEST_VARDIR/tmp/echo_server.py
---remove_file $MYSQLTEST_VARDIR/tmp/wait_port.py
 --remove_file $MYSQLTEST_VARDIR/tmp/echo_port.inc
+--remove_file $MYSQLTEST_VARDIR/tmp/echo_server.log
 
 UNINSTALL EXTENSION vsql_http;
