@@ -17,6 +17,8 @@ STOP_SH  = os.path.join(_dir, 'stop_echo.sh')
 LOG      = os.path.join(_dir, 'echo_server.log')
 
 def serve():
+    # Pre-bind marker so a hang before the socket is up isn't a silent empty log.
+    sys.stderr.write('echo child: starting\n'); sys.stderr.flush()
     # Backstop: self-exit so a leaked server can't outlive the run if cleanup
     # is skipped. Tests finish in <1s; 60s is margin.
     def _watchdog():
@@ -40,7 +42,16 @@ def serve():
             self.wfile.write(payload)
         do_GET = do_POST = do_PUT = do_DELETE = do_PATCH = handle_any
         def log_message(self, *a): pass
-    srv = http.server.HTTPServer(('127.0.0.1', 0), H)
+    # HTTPServer.server_bind() runs socket.getfqdn() — a reverse-DNS lookup that
+    # stalls on macOS CI runners, blocking the constructor before the port can
+    # be reported. Bind without it.
+    class Server(http.server.HTTPServer):
+        def server_bind(self):
+            import socketserver
+            socketserver.TCPServer.server_bind(self)
+            self.server_name = 'localhost'
+            self.server_port = self.server_address[1]
+    srv = Server(('127.0.0.1', 0), H)
     port = srv.server_address[1]
     with open(STOP_SH, 'w') as f:
         f.write('kill %d\n' % os.getpid())
