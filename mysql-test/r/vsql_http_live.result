@@ -10,8 +10,8 @@ SELECT JSON_VALUE(CONVERT(vsql_http.http_get('https://villagesql.com/robots.txt'
 JSON_VALUE(CONVERT(vsql_http.http_get('https://villagesql.com/robots.txt') USING utf8mb4), '$.content_type') IS NOT NULL
 1
 # response content is non-null
-SELECT JSON_VALUE(CONVERT(vsql_http.http_get('https://villagesql.com/robots.txt') USING utf8mb4), '$.content') IS NOT NULL;
-JSON_VALUE(CONVERT(vsql_http.http_get('https://villagesql.com/robots.txt') USING utf8mb4), '$.content') IS NOT NULL
+SELECT JSON_EXTRACT(CONVERT(vsql_http.http_get('https://villagesql.com/robots.txt') USING utf8mb4), '$.content') IS NOT NULL;
+JSON_EXTRACT(CONVERT(vsql_http.http_get('https://villagesql.com/robots.txt') USING utf8mb4), '$.content') IS NOT NULL
 1
 # headers array is non-empty
 SELECT JSON_LENGTH(CONVERT(vsql_http.http_get('https://villagesql.com/robots.txt') USING utf8mb4), '$.headers') > 0;
