@@ -148,6 +148,10 @@ SELECT
 
 All functions return NULL on connection failure or NULL input.
 
+`url_encode` and `url_decode` are deterministic and can be used in generated columns
+and CHECK constraints. The HTTP request functions are not, because they perform
+network I/O — see [Known Limitations](#known-limitations).
+
 ### Response JSON Shape
 
 Every HTTP function returns a JSON string with these fields:
@@ -241,6 +245,20 @@ use `JSON_UNQUOTE(JSON_EXTRACT(...))` to read the content field.
 
 **Response truncation**: Responses larger than 256KB are truncated. This covers
 typical API responses used in SQL queries.
+
+**HTTP functions are not deterministic**: `http_get`, `http_post`, `http_put`,
+`http_delete`, `http_patch`, and `http_request` perform network I/O, so the server
+rejects them in generated columns and CHECK constraints. Only `url_encode` and
+`url_decode` may be used there.
+
+```sql
+CREATE TABLE feeds (u VARCHAR(255) NOT NULL, body TEXT AS (http_get(u)) STORED);
+-- ERROR 3763 (HY000): Expression of generated column 'body' contains a
+-- disallowed function: http_get.
+
+CREATE TABLE feeds (u VARCHAR(255) NOT NULL, encoded TEXT AS (url_encode(u)) STORED);
+-- OK: 'a b&c' -> 'a%20b%26c'
+```
 
 **No function overloading**: VEF does not support multiple signatures for the same
 function name. To pass custom headers, use the generic `http()` function instead
