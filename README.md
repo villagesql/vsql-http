@@ -11,6 +11,18 @@ HTTP client functions for VillageSQL. Inspired by [pgsql-http](https://github.co
 
 ## Installation
 
+If you installed VillageSQL with the install script, the Docker image, or a
+release tarball, `vsql_http.veb` is already in the server's `lib/veb/`
+directory — this extension is bundled with the server. There is nothing to build
+or download:
+
+```sql
+INSTALL EXTENSION vsql_http;
+```
+
+Build from source only if you built the server from source without the bundled
+extensions, or if you are working on this extension itself.
+
 ### Prerequisites
 
 - VillageSQL build directory (specified via `VillageSQL_BUILD_DIR`)
@@ -27,15 +39,15 @@ HTTP client functions for VillageSQL. Inspired by [pgsql-http](https://github.co
 mkdir build
 cd build
 cmake .. -DVillageSQL_BUILD_DIR=$HOME/build/villagesql
-make -j $(($(getconf _NPROCESSORS_ONLN) - 2))
+make -j $(getconf _NPROCESSORS_ONLN)
 ```
 
 **macOS:**
 ```bash
 mkdir build
 cd build
-cmake .. -DVillageSQL_BUILD_DIR=~/build/villagesql
-make -j $(($(sysctl -n hw.logicalcpu) - 2))
+cmake .. -DVillageSQL_BUILD_DIR="$HOME/build/villagesql"
+make -j $(sysctl -n hw.logicalcpu)
 ```
 
 This creates `vsql_http.veb` in the build directory.
@@ -101,17 +113,22 @@ BEGIN
     'customer', NEW.customer_id,
     'total',    NEW.total
   );
-  -- Fire-and-forget: NULL return means connection failed
-  SET @ignored = vsql_http.http_post(
-    'https://hooks.example.com/orders',
-    'application/json',
-    @payload
+  -- A NULL return means the request never completed. Always pass an explicit
+  -- timeout, or a slow endpoint blocks the INSERT for as long as it hangs.
+  SET @response = vsql_http.http_request(
+    'POST', 'https://hooks.example.com/orders',
+    NULL, @payload, 'application/json',
+    '{"timeout": 5}'
   );
+  IF @response IS NULL THEN
+    SIGNAL SQLSTATE '45000'
+      SET MESSAGE_TEXT = 'order webhook failed';
+  END IF;
 END$$
 DELIMITER ;
 ```
 
-The call is synchronous — the trigger blocks until the request completes or times out. Use `http_request()` with an options JSON to control the deadline:
+The call is synchronous — the trigger blocks until the request completes or times out. The options JSON carries the deadline:
 
 ```sql
 SET @ignored = vsql_http.http_request(
@@ -158,7 +175,7 @@ Every HTTP function returns a JSON string with these fields:
 
 | Field | Type | Description |
 |-------|------|-------------|
-| `status` | integer (as string) | HTTP status code |
+| `status` | integer | HTTP status code |
 | `content_type` | string | Value of the Content-Type response header |
 | `headers` | array of `[name, value]` pairs | All response headers (names lowercased) |
 | `content` | string | Response body |
@@ -243,8 +260,11 @@ vsql_http/
 extracted value exceeds its internal size limit. For responses with large bodies,
 use `JSON_UNQUOTE(JSON_EXTRACT(...))` to read the content field.
 
-**Response truncation**: Responses larger than 256KB are truncated. This covers
-typical API responses used in SQL queries.
+**Response truncation**: The returned envelope is truncated at 262144 bytes
+(256KB). The cut is at a byte boundary and can land inside the `content` string,
+which leaves the value unparseable — every `JSON_*` function on it then raises
+ERROR 3141 rather than returning a shortened body. Check
+`LENGTH(response) < 262144` before parsing.
 
 **HTTP functions are not deterministic**: `http_get`, `http_post`, `http_put`,
 `http_delete`, `http_patch`, and `http_request` perform network I/O, so the server
@@ -261,8 +281,8 @@ CREATE TABLE feeds (u VARCHAR(255) NOT NULL, encoded TEXT AS (url_encode(u)) STO
 ```
 
 **No function overloading**: VEF does not support multiple signatures for the same
-function name. To pass custom headers, use the generic `http()` function instead
-of `http_get()`.
+function name. To pass custom headers, use the generic `http_request()` function
+instead of `http_get()`.
 → [Open issue](https://github.com/villagesql/villagesql-server/issues/new?title=VEF:+support+function+overloading+%28multiple+VDF+signatures+with+same+name%2C+different+arity%29)
 
 **`alt_str_buf` not populated**: VEF's `alt_str_buf` field in `vef_vdf_result_t`
