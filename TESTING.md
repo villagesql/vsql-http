@@ -52,8 +52,11 @@ perl mysql-test-run.pl --suite=/path/to/vsql_http/mysql-test --record
 
 ## Notes
 
-**Binary charset**: VEF STRING return type produces binary charset. All test queries
-wrap function output in `CONVERT(... USING utf8mb4)` before passing to `JSON_VALUE`.
+**Binary charset on 0.0.6 and earlier**: there, VEF STRING return type
+produces binary charset. All test queries wrap function output in
+`CONVERT(... USING utf8mb4)` before passing to `JSON_VALUE`, which also
+works unchanged on VillageSQL 0.0.7 and later, where the fix makes the wrap
+unnecessary but harmless.
 
 **`JSON_VALUE` size limit**: MySQL's `JSON_VALUE` returns NULL for extracted values
 larger than its internal limit (~512 chars). The `content` field of a real HTTP

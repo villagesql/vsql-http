@@ -253,8 +253,10 @@ vsql_http/
 
 ## Known Limitations
 
-**Binary charset**: VEF STRING functions return binary charset. Wrap with
-`CONVERT(... USING utf8mb4)` before passing to `JSON_VALUE` or `JSON_EXTRACT`.
+**Binary charset on 0.0.6 and earlier**: there, VEF STRING functions return
+binary charset. Wrap with `CONVERT(... USING utf8mb4)` before passing to
+`JSON_VALUE` or `JSON_EXTRACT`. Fixed in VillageSQL 0.0.7 — `CONVERT` is
+harmless to keep either way, which is why every example above uses it.
 
 **`JSON_VALUE` and large responses**: MySQL's `JSON_VALUE` returns NULL when the
 extracted value exceeds its internal size limit. For responses with large bodies,
