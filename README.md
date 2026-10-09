@@ -163,7 +163,13 @@ SELECT
 | `url_encode(text)` | Percent-encode a string |
 | `url_decode(text)` | Decode a percent-encoded string |
 
-All functions return NULL on connection failure or NULL input.
+All functions return NULL for NULL input. The HTTP functions also return NULL when
+the request fails (connection refused, DNS failure, timeout), with a warning that
+carries curl's error message:
+
+```
+Warning 3200 VDF error in function 'http_get': Couldn't connect to server
+```
 
 `http_request` accepts the standard methods in any case (`'get'` sends `GET`).
 Any other method is sent exactly as given.

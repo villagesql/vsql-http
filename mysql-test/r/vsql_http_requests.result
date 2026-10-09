@@ -49,6 +49,9 @@ JSON_VALUE(r, '$.content') = '' AS empty_content
 FROM (SELECT CONVERT(vsql_http.http_request('HEAD', @echo_url, NULL, NULL, NULL, NULL) USING utf8mb4) AS r) t;
 status	empty_content
 200	1
+SELECT JSON_VALUE(CONVERT(vsql_http.http_request('head', @echo_url, NULL, NULL, NULL, NULL) USING utf8mb4), '$.status') AS lowercase_head_status;
+lowercase_head_status
+200
 # http_request: standard methods match case-insensitively and go out uppercase
 SELECT
 JSON_VALUE(JSON_UNQUOTE(JSON_EXTRACT(CONVERT(vsql_http.http_request('get', @echo_url, NULL, NULL, NULL, NULL) USING utf8mb4), '$.content')), '$.method') AS get_method,
@@ -64,8 +67,10 @@ purge
 SELECT vsql_http.http_get(NULL) IS NULL AS is_null;
 is_null
 1
-# Unreachable host returns NULL (not a crash)
+# Connection refused returns NULL with a warning carrying curl's error
 SELECT vsql_http.http_get('http://127.0.0.1:1/') IS NULL AS is_null;
 is_null
 1
+Warnings:
+Warning	3200	VDF error in function 'http_get': Couldn't connect to server
 UNINSTALL EXTENSION vsql_http;

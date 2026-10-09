@@ -47,7 +47,7 @@ perl mysql-test-run.pl --suite=/path/to/vsql_http/mysql-test --record
 - `http()` with custom header → status 200
 - `http_post`, `http_delete`, `http_put`, `http_patch` → each returns a status code
 - NULL URL → NULL return
-- Unreachable host → NULL return (no crash)
+- Connection refused → NULL return with curl's error as Warning 3200
 - Tears down the HTTP server with `pkill` after the test
 
 ## Notes
