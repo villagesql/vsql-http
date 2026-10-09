@@ -42,12 +42,35 @@ hi
 SELECT JSON_VALUE(JSON_UNQUOTE(JSON_EXTRACT(CONVERT(vsql_http.http_request('POST', @echo_url, NULL, 'payload', 'text/plain', NULL) USING utf8mb4), '$.content')), '$.headers."content-type"') AS content_type;
 content_type
 text/plain
+# http_request: HEAD returns the status and empty content
+SELECT
+JSON_VALUE(r, '$.status') AS status,
+JSON_VALUE(r, '$.content') = '' AS empty_content
+FROM (SELECT CONVERT(vsql_http.http_request('HEAD', @echo_url, NULL, NULL, NULL, NULL) USING utf8mb4) AS r) t;
+status	empty_content
+200	1
+SELECT JSON_VALUE(CONVERT(vsql_http.http_request('head', @echo_url, NULL, NULL, NULL, NULL) USING utf8mb4), '$.status') AS lowercase_head_status;
+lowercase_head_status
+200
+# http_request: standard methods match case-insensitively and go out uppercase
+SELECT
+JSON_VALUE(JSON_UNQUOTE(JSON_EXTRACT(CONVERT(vsql_http.http_request('get', @echo_url, NULL, NULL, NULL, NULL) USING utf8mb4), '$.content')), '$.method') AS get_method,
+JSON_VALUE(JSON_UNQUOTE(JSON_EXTRACT(CONVERT(vsql_http.http_request('Post', @echo_url, NULL, 'x', 'text/plain', NULL) USING utf8mb4), '$.content')), '$.method') AS post_method,
+JSON_VALUE(JSON_UNQUOTE(JSON_EXTRACT(CONVERT(vsql_http.http_request('delete', @echo_url, NULL, NULL, NULL, NULL) USING utf8mb4), '$.content')), '$.method') AS delete_method;
+get_method	post_method	delete_method
+GET	POST	DELETE
+# http_request: a non-standard method is sent as given
+SELECT JSON_VALUE(JSON_UNQUOTE(JSON_EXTRACT(CONVERT(vsql_http.http_request('purge', @echo_url, NULL, NULL, NULL, NULL) USING utf8mb4), '$.content')), '$.method') AS purge_method;
+purge_method
+purge
 # NULL url returns NULL
 SELECT vsql_http.http_get(NULL) IS NULL AS is_null;
 is_null
 1
-# Unreachable host returns NULL (not a crash)
+# Connection refused returns NULL with a warning carrying curl's error
 SELECT vsql_http.http_get('http://127.0.0.1:1/') IS NULL AS is_null;
 is_null
 1
+Warnings:
+Warning	3200	VDF error in function 'http_get': Couldn't connect to server
 UNINSTALL EXTENSION vsql_http;

@@ -66,10 +66,10 @@ See `AGENTS.local.md` for machine-specific build paths and configurations.
 **Response JSON Shape:**
 All HTTP functions return a JSON string: `{"status": N, "content_type": "...", "headers": [["name","value"],...], "content": "..."}`
 
-All functions return NULL on connection failure or NULL input.
+All functions return NULL for NULL input. HTTP functions return NULL with Warning 3200 on connection failure.
 
 **Error Handling:**
-- HTTP functions return NULL on curl-level failure (connection refused, DNS failure, timeout)
+- HTTP functions return NULL with Warning 3200 on curl-level failure (connection refused, DNS failure, timeout); the warning text is curl's error message, e.g. `VDF error in function 'http_get': Couldn't connect to server`
 - `url_encode`/`url_decode` return NULL for NULL input or curl init failure
 - Exceptions are caught and surfaced as Warning 3200 via `result.warning()`
 
@@ -78,6 +78,7 @@ All functions return NULL on connection failure or NULL input.
 - Process-wide `curl_global_init()` via `std::once_flag`
 - HTTP buffer size: 256KB (responses exceeding this are truncated)
 - URL encode/decode buffer size: 8KB
+- `http_request` method names: the standard methods (GET, HEAD, POST, PUT, DELETE, CONNECT, OPTIONS, TRACE, PATCH) match case-insensitively and are sent uppercase; any other method is sent as given
 - Header names are lowercased per HTTP/2 convention
 - Custom headers parsed from JSON object format `{"Key": "Value", ...}`
 - Options JSON supports: `timeout` (int), `proxy`, `user_agent`, `ssl_cert`, `ssl_key`, `ssl_ca_bundle` (strings)
@@ -170,7 +171,7 @@ VSQL_HTTP_VEB=/path/to/vsql-http/build/vsql_http.veb \
 - Tests should validate function output and behavior
 - Each test should install the extension, run tests, and clean up (uninstall extension)
 - HTTP tests use a local `python3 -m http.server` — no external network access required
-- **Error Handling**: Functions return NULL for errors (result->type = VEF_RESULT_NULL)
+- **Error Handling**: HTTP functions return NULL with a warning on curl failure (`result.warning()`); never call `set_null()` after `warning()`, because it discards the warning
 
 ## Extension Installation
 

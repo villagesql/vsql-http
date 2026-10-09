@@ -45,6 +45,13 @@ def serve():
             self.end_headers()
             self.wfile.write(payload)
         do_GET = do_POST = do_PUT = do_DELETE = do_PATCH = handle_any
+        def do_HEAD(self):
+            # Headers only: Content-Length announces a body that is not sent.
+            self.send_response(200)
+            self.send_header('Content-Type', 'application/json')
+            self.send_header('Content-Length', 42)
+            self.end_headers()
+        do_purge = handle_any  # a non-standard method, spelled lowercase
         def log_message(self, *a): pass
     # HTTPServer.server_bind() runs socket.getfqdn() — a reverse-DNS lookup that
     # stalls on macOS CI runners, blocking the constructor before the port can
@@ -126,10 +133,26 @@ SELECT JSON_VALUE(JSON_UNQUOTE(JSON_EXTRACT(CONVERT(vsql_http.http_request('GET'
 --echo # http_request: content-type is forwarded
 SELECT JSON_VALUE(JSON_UNQUOTE(JSON_EXTRACT(CONVERT(vsql_http.http_request('POST', @echo_url, NULL, 'payload', 'text/plain', NULL) USING utf8mb4), '$.content')), '$.headers."content-type"') AS content_type;
 
+--echo # http_request: HEAD returns the status and empty content
+SELECT
+  JSON_VALUE(r, '$.status') AS status,
+  JSON_VALUE(r, '$.content') = '' AS empty_content
+FROM (SELECT CONVERT(vsql_http.http_request('HEAD', @echo_url, NULL, NULL, NULL, NULL) USING utf8mb4) AS r) t;
+SELECT JSON_VALUE(CONVERT(vsql_http.http_request('head', @echo_url, NULL, NULL, NULL, NULL) USING utf8mb4), '$.status') AS lowercase_head_status;
+
+--echo # http_request: standard methods match case-insensitively and go out uppercase
+SELECT
+  JSON_VALUE(JSON_UNQUOTE(JSON_EXTRACT(CONVERT(vsql_http.http_request('get', @echo_url, NULL, NULL, NULL, NULL) USING utf8mb4), '$.content')), '$.method') AS get_method,
+  JSON_VALUE(JSON_UNQUOTE(JSON_EXTRACT(CONVERT(vsql_http.http_request('Post', @echo_url, NULL, 'x', 'text/plain', NULL) USING utf8mb4), '$.content')), '$.method') AS post_method,
+  JSON_VALUE(JSON_UNQUOTE(JSON_EXTRACT(CONVERT(vsql_http.http_request('delete', @echo_url, NULL, NULL, NULL, NULL) USING utf8mb4), '$.content')), '$.method') AS delete_method;
+
+--echo # http_request: a non-standard method is sent as given
+SELECT JSON_VALUE(JSON_UNQUOTE(JSON_EXTRACT(CONVERT(vsql_http.http_request('purge', @echo_url, NULL, NULL, NULL, NULL) USING utf8mb4), '$.content')), '$.method') AS purge_method;
+
 --echo # NULL url returns NULL
 SELECT vsql_http.http_get(NULL) IS NULL AS is_null;
 
---echo # Unreachable host returns NULL (not a crash)
+--echo # Connection refused returns NULL with a warning carrying curl's error
 SELECT vsql_http.http_get('http://127.0.0.1:1/') IS NULL AS is_null;
 
 # Kill the echo server by PID (stop_echo.sh was written by the server child).

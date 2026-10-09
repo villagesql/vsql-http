@@ -19,9 +19,9 @@
 //   {"status": <int>, "content_type": "<str>",
 //    "headers": [["name","value"],...], "content": "<str>"}
 //
-// All HTTP functions return NULL on curl-level failure (connection refused,
-// DNS failure, timeout). Use JSON_VALUE(result, '$.status') to inspect the
-// HTTP status code.
+// All HTTP functions return NULL with a warning carrying curl's error text on
+// curl-level failure (connection refused, DNS failure, timeout). Use
+// JSON_VALUE(result, '$.status') to inspect the HTTP status code.
 
 #include <villagesql/vsql.h>
 
@@ -297,16 +297,36 @@ static HttpOptions parse_options(std::string_view json) {
 // Core HTTP executor
 // ============================================================
 
-// Returns JSON response string, or empty string on curl-level failure.
-// Response shape: {"status": N, "content_type": "...", "headers": [...],
-//                  "content": "..."}
-static std::string do_http(std::string_view method, std::string_view url,
-                            std::string_view headers_json,
-                            std::string_view body,
-                            std::string_view content_type,
-                            const HttpOptions &opts = HttpOptions{}) {
+// RFC 9110 makes method names case-sensitive, and every standard method is
+// uppercase, so a server may reject 'get' (Python's http.server answers 501).
+// The standard methods therefore match case-insensitively and go out
+// uppercase. Any other method is sent as given: an extension method's
+// spelling is the caller's to choose.
+static std::string normalize_method(std::string_view m) {
+  static constexpr std::string_view kStandard[] = {
+      "GET", "HEAD", "POST", "PUT", "DELETE",
+      "CONNECT", "OPTIONS", "TRACE", "PATCH"};
+  for (std::string_view k : kStandard) {
+    if (k.size() != m.size()) continue;
+    size_t i = 0;
+    while (i < k.size() && (m[i] == k[i] || m[i] == k[i] + 32)) ++i;
+    if (i == k.size()) return std::string(k);
+  }
+  return std::string(m);
+}
+
+// On success returns true and sets out to the JSON response:
+//   {"status": N, "content_type": "...", "headers": [...], "content": "..."}
+// On curl-level failure returns false and sets out to curl's error text.
+static bool do_http(std::string_view method, std::string_view url,
+                    std::string_view headers_json, std::string_view body,
+                    std::string_view content_type, std::string &out,
+                    const HttpOptions &opts = HttpOptions{}) {
   CURL *curl = get_curl_handle();
-  if (!curl) return {};
+  if (!curl) {
+    out = "curl initialization failed";
+    return false;
+  }
   curl_easy_reset(curl);  // clear options from previous call; keeps connection pool
 
   std::string response_body;
@@ -315,7 +335,7 @@ static std::string do_http(std::string_view method, std::string_view url,
   // C strings and stable pointers for the duration of curl_easy_perform.
   std::string url_str(url);
   std::string body_str(body);
-  std::string method_str(method);
+  std::string method_str = normalize_method(method);
   struct curl_slist *hdrs = nullptr;
 
   // RAII: clean up header list on all exit paths (handle is thread-local).
@@ -351,8 +371,12 @@ static std::string do_http(std::string_view method, std::string_view url,
     curl_easy_setopt(curl, CURLOPT_POSTFIELDS, body_str.c_str());
     curl_easy_setopt(curl, CURLOPT_POSTFIELDSIZE,
                      static_cast<long>(body_str.size()));
+  } else if (method_str == "HEAD") {
+    // NOBODY sends HEAD and stops after the headers. CUSTOMREQUEST "HEAD"
+    // would wait for the body that Content-Length announces and fail.
+    curl_easy_setopt(curl, CURLOPT_NOBODY, 1L);
   } else {
-    // PUT, DELETE, PATCH, HEAD, OPTIONS, or any custom method.
+    // PUT, DELETE, PATCH, OPTIONS, or any custom method.
     curl_easy_setopt(curl, CURLOPT_CUSTOMREQUEST, method_str.c_str());
     if (!body_str.empty()) {
       curl_easy_setopt(curl, CURLOPT_POSTFIELDS, body_str.c_str());
@@ -373,7 +397,10 @@ static std::string do_http(std::string_view method, std::string_view url,
   if (hdrs) curl_easy_setopt(curl, CURLOPT_HTTPHEADER, hdrs);
 
   CURLcode res = curl_easy_perform(curl);
-  if (res != CURLE_OK) return {};
+  if (res != CURLE_OK) {
+    out = curl_easy_strerror(res);
+    return false;
+  }
 
   long status_code = 0;
   curl_easy_getinfo(curl, CURLINFO_RESPONSE_CODE, &status_code);
@@ -383,7 +410,7 @@ static std::string do_http(std::string_view method, std::string_view url,
   std::string_view resp_ct = ct_ptr ? ct_ptr : "";
 
   // Build JSON response.
-  std::string out;
+  out.clear();
   out.reserve(128 + response_headers.size() + response_body.size() * 2);
   out += "{\"status\": ";
   out += std::to_string(status_code);
@@ -394,15 +421,16 @@ static std::string do_http(std::string_view method, std::string_view url,
   out += "], \"content\": \"";
   out += json_escape(response_body);
   out += "\"}";
-  return out;
+  return true;
 }
 
 // ============================================================
 // VDF implementations
 // ============================================================
 
-// Shared wrapper: null-checks url, calls fn() to get the result string,
-// handles NULL/empty/error outcomes, and writes to the result buffer.
+// Shared wrapper: null-checks url, calls fn(out) to run the request, and
+// writes the JSON response, or NULL with a warning carrying the curl error.
+// The server prefixes the warning with the function name.
 template <typename Fn>
 static void http_call(StringArg url, StringResult result, const char *func_name,
                       Fn fn) {
@@ -411,9 +439,9 @@ static void http_call(StringArg url, StringResult result, const char *func_name,
       result.set_null();
       return;
     }
-    std::string r = fn();
-    if (r.empty()) {
-      result.set_null();
+    std::string r;
+    if (!fn(r)) {
+      result.warning(r);
       return;
     }
     result.set(r);
@@ -424,38 +452,42 @@ static void http_call(StringArg url, StringResult result, const char *func_name,
 
 static void http_get_1_impl(StringArg url, StringResult result) {
   http_call(url, result, "http_get",
-            [&] { return do_http("GET", url.value(), {}, {}, {}); });
+            [&](std::string &r) {
+              return do_http("GET", url.value(), {}, {}, {}, r);
+            });
 }
 
 static void http_post_3_impl(StringArg url, StringArg ct, StringArg body,
                              StringResult result) {
-  http_call(url, result, "http_post", [&] {
+  http_call(url, result, "http_post", [&](std::string &r) {
     return do_http("POST", url.value(), {},
                    body.is_null() ? std::string_view{} : body.value(),
-                   ct.is_null() ? std::string_view{} : ct.value());
+                   ct.is_null() ? std::string_view{} : ct.value(), r);
   });
 }
 
 static void http_put_3_impl(StringArg url, StringArg ct, StringArg body,
                             StringResult result) {
-  http_call(url, result, "http_put", [&] {
+  http_call(url, result, "http_put", [&](std::string &r) {
     return do_http("PUT", url.value(), {},
                    body.is_null() ? std::string_view{} : body.value(),
-                   ct.is_null() ? std::string_view{} : ct.value());
+                   ct.is_null() ? std::string_view{} : ct.value(), r);
   });
 }
 
 static void http_delete_1_impl(StringArg url, StringResult result) {
   http_call(url, result, "http_delete",
-            [&] { return do_http("DELETE", url.value(), {}, {}, {}); });
+            [&](std::string &r) {
+              return do_http("DELETE", url.value(), {}, {}, {}, r);
+            });
 }
 
 static void http_patch_3_impl(StringArg url, StringArg ct, StringArg body,
                               StringResult result) {
-  http_call(url, result, "http_patch", [&] {
+  http_call(url, result, "http_patch", [&](std::string &r) {
     return do_http("PATCH", url.value(), {},
                    body.is_null() ? std::string_view{} : body.value(),
-                   ct.is_null() ? std::string_view{} : ct.value());
+                   ct.is_null() ? std::string_view{} : ct.value(), r);
   });
 }
 
@@ -466,7 +498,7 @@ static void http_patch_3_impl(StringArg url, StringArg ct, StringArg body,
 static void http_6_impl(StringArg method, StringArg url, StringArg hdrs,
                         StringArg body, StringArg ct, StringArg options,
                         StringResult result) {
-  http_call(url, result, "http_request", [&] {
+  http_call(url, result, "http_request", [&](std::string &r) {
     std::string_view m =
         method.is_null() ? std::string_view{"GET"} : method.value();
     HttpOptions opts =
@@ -474,7 +506,7 @@ static void http_6_impl(StringArg method, StringArg url, StringArg hdrs,
     return do_http(m, url.value(),
                    hdrs.is_null() ? std::string_view{} : hdrs.value(),
                    body.is_null() ? std::string_view{} : body.value(),
-                   ct.is_null() ? std::string_view{} : ct.value(), opts);
+                   ct.is_null() ? std::string_view{} : ct.value(), r, opts);
   });
 }
 
