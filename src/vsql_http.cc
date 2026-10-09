@@ -351,8 +351,12 @@ static std::string do_http(std::string_view method, std::string_view url,
     curl_easy_setopt(curl, CURLOPT_POSTFIELDS, body_str.c_str());
     curl_easy_setopt(curl, CURLOPT_POSTFIELDSIZE,
                      static_cast<long>(body_str.size()));
+  } else if (method_str == "HEAD") {
+    // NOBODY sends HEAD and stops after the headers. CUSTOMREQUEST "HEAD"
+    // would wait for the body that Content-Length announces and fail.
+    curl_easy_setopt(curl, CURLOPT_NOBODY, 1L);
   } else {
-    // PUT, DELETE, PATCH, HEAD, OPTIONS, or any custom method.
+    // PUT, DELETE, PATCH, OPTIONS, or any custom method.
     curl_easy_setopt(curl, CURLOPT_CUSTOMREQUEST, method_str.c_str());
     if (!body_str.empty()) {
       curl_easy_setopt(curl, CURLOPT_POSTFIELDS, body_str.c_str());

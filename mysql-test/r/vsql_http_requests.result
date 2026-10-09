@@ -42,6 +42,13 @@ hi
 SELECT JSON_VALUE(JSON_UNQUOTE(JSON_EXTRACT(CONVERT(vsql_http.http_request('POST', @echo_url, NULL, 'payload', 'text/plain', NULL) USING utf8mb4), '$.content')), '$.headers."content-type"') AS content_type;
 content_type
 text/plain
+# http_request: HEAD returns the status and empty content
+SELECT
+JSON_VALUE(r, '$.status') AS status,
+JSON_VALUE(r, '$.content') = '' AS empty_content
+FROM (SELECT CONVERT(vsql_http.http_request('HEAD', @echo_url, NULL, NULL, NULL, NULL) USING utf8mb4) AS r) t;
+status	empty_content
+200	1
 # NULL url returns NULL
 SELECT vsql_http.http_get(NULL) IS NULL AS is_null;
 is_null
