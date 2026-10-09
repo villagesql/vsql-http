@@ -297,6 +297,24 @@ static HttpOptions parse_options(std::string_view json) {
 // Core HTTP executor
 // ============================================================
 
+// RFC 9110 makes method names case-sensitive, and every standard method is
+// uppercase, so a server may reject 'get' (Python's http.server answers 501).
+// The standard methods therefore match case-insensitively and go out
+// uppercase. Any other method is sent as given: an extension method's
+// spelling is the caller's to choose.
+static std::string normalize_method(std::string_view m) {
+  static constexpr std::string_view kStandard[] = {
+      "GET", "HEAD", "POST", "PUT", "DELETE",
+      "CONNECT", "OPTIONS", "TRACE", "PATCH"};
+  for (std::string_view k : kStandard) {
+    if (k.size() != m.size()) continue;
+    size_t i = 0;
+    while (i < k.size() && (m[i] == k[i] || m[i] == k[i] + 32)) ++i;
+    if (i == k.size()) return std::string(k);
+  }
+  return std::string(m);
+}
+
 // Returns JSON response string, or empty string on curl-level failure.
 // Response shape: {"status": N, "content_type": "...", "headers": [...],
 //                  "content": "..."}
@@ -315,7 +333,7 @@ static std::string do_http(std::string_view method, std::string_view url,
   // C strings and stable pointers for the duration of curl_easy_perform.
   std::string url_str(url);
   std::string body_str(body);
-  std::string method_str(method);
+  std::string method_str = normalize_method(method);
   struct curl_slist *hdrs = nullptr;
 
   // RAII: clean up header list on all exit paths (handle is thread-local).

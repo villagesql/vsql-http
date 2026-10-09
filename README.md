@@ -165,6 +165,9 @@ SELECT
 
 All functions return NULL on connection failure or NULL input.
 
+`http_request` accepts the standard methods in any case (`'get'` sends `GET`).
+Any other method is sent exactly as given.
+
 `url_encode` and `url_decode` are deterministic and can be used in generated columns
 and CHECK constraints. The HTTP request functions are not, because they perform
 network I/O — see [Known Limitations](#known-limitations).

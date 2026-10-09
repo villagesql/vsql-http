@@ -78,6 +78,7 @@ All functions return NULL on connection failure or NULL input.
 - Process-wide `curl_global_init()` via `std::once_flag`
 - HTTP buffer size: 256KB (responses exceeding this are truncated)
 - URL encode/decode buffer size: 8KB
+- `http_request` method names: the standard methods (GET, HEAD, POST, PUT, DELETE, CONNECT, OPTIONS, TRACE, PATCH) match case-insensitively and are sent uppercase; any other method is sent as given
 - Header names are lowercased per HTTP/2 convention
 - Custom headers parsed from JSON object format `{"Key": "Value", ...}`
 - Options JSON supports: `timeout` (int), `proxy`, `user_agent`, `ssl_cert`, `ssl_key`, `ssl_ca_bundle` (strings)

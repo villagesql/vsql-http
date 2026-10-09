@@ -51,6 +51,7 @@ def serve():
             self.send_header('Content-Type', 'application/json')
             self.send_header('Content-Length', 42)
             self.end_headers()
+        do_purge = handle_any  # a non-standard method, spelled lowercase
         def log_message(self, *a): pass
     # HTTPServer.server_bind() runs socket.getfqdn() — a reverse-DNS lookup that
     # stalls on macOS CI runners, blocking the constructor before the port can
@@ -137,6 +138,16 @@ SELECT
   JSON_VALUE(r, '$.status') AS status,
   JSON_VALUE(r, '$.content') = '' AS empty_content
 FROM (SELECT CONVERT(vsql_http.http_request('HEAD', @echo_url, NULL, NULL, NULL, NULL) USING utf8mb4) AS r) t;
+SELECT JSON_VALUE(CONVERT(vsql_http.http_request('head', @echo_url, NULL, NULL, NULL, NULL) USING utf8mb4), '$.status') AS lowercase_head_status;
+
+--echo # http_request: standard methods match case-insensitively and go out uppercase
+SELECT
+  JSON_VALUE(JSON_UNQUOTE(JSON_EXTRACT(CONVERT(vsql_http.http_request('get', @echo_url, NULL, NULL, NULL, NULL) USING utf8mb4), '$.content')), '$.method') AS get_method,
+  JSON_VALUE(JSON_UNQUOTE(JSON_EXTRACT(CONVERT(vsql_http.http_request('Post', @echo_url, NULL, 'x', 'text/plain', NULL) USING utf8mb4), '$.content')), '$.method') AS post_method,
+  JSON_VALUE(JSON_UNQUOTE(JSON_EXTRACT(CONVERT(vsql_http.http_request('delete', @echo_url, NULL, NULL, NULL, NULL) USING utf8mb4), '$.content')), '$.method') AS delete_method;
+
+--echo # http_request: a non-standard method is sent as given
+SELECT JSON_VALUE(JSON_UNQUOTE(JSON_EXTRACT(CONVERT(vsql_http.http_request('purge', @echo_url, NULL, NULL, NULL, NULL) USING utf8mb4), '$.content')), '$.method') AS purge_method;
 
 --echo # NULL url returns NULL
 SELECT vsql_http.http_get(NULL) IS NULL AS is_null;
