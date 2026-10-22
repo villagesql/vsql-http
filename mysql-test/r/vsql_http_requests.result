@@ -72,5 +72,5 @@ SELECT vsql_http.http_get('http://127.0.0.1:1/') IS NULL AS is_null;
 is_null
 1
 Warnings:
-Warning	3200	VDF error in function 'http_get': Couldn't connect to server
+Warning	3200	VDF error in function 'http_get': <curl error>
 UNINSTALL EXTENSION vsql_http;
