@@ -43,6 +43,8 @@ perl mysql-test-run.pl --suite=/path/to/vsql_http/mysql-test --record
 - `CREATE TABLE ... AS SELECT url_encode(...)` sizes the materialized column
   from `max_result_length` (`VEF_MAX_RESULT_LENGTH`), not from a short argument's
   own width
+- `CREATE TABLE ... AS SELECT url_decode(...)` sizes the materialized column
+  from the argument width, because the decoded output is never longer
 
 **vsql_http_requests.test**
 - Starts a Python HTTP server on port 18777 serving `$MYSQLTEST_VARDIR`

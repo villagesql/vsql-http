@@ -605,7 +605,8 @@ static constexpr size_t kEncodeBufSize = 8 * 1024;
 // limit the length of an HTTP response, and url_encode output is up to three
 // times as long as its input. Without it, a materialized result (e.g. CREATE
 // TABLE ... AS SELECT) is sized from the width of the argument(s), and a
-// longer result does not fit.
+// longer result does not fit. url_decode does not declare it: its output is
+// never longer than its input, so the argument width already holds it.
 //
 // Note: VEF does not support function overloading. Each function name maps
 // to exactly one signature. For HTTP calls with custom headers, use http().
@@ -679,7 +680,6 @@ VEF_GENERATE_ENTRY_POINTS(
                   .build())
         .func(make_func<&urldecode_impl>("url_decode")
                   .returns(STRING)
-                  .max_result_length(VEF_MAX_RESULT_LENGTH)
                   .param(STRING)
                   .buffer_size(kEncodeBufSize)
                   .deterministic()

@@ -35,4 +35,11 @@ SELECT DATA_TYPE, CHARACTER_MAXIMUM_LENGTH FROM INFORMATION_SCHEMA.COLUMNS
   WHERE TABLE_NAME = 't_url_encode_materialize' AND COLUMN_NAME = 'v';
 DROP TABLE t_url_encode_materialize;
 
+--echo # url_decode declares no max_result_length: its output is never longer
+--echo # than its input, so the column is sized from the argument width.
+CREATE TABLE t_url_decode_materialize AS SELECT vsql_http.url_decode('%41%42') AS v;
+SELECT DATA_TYPE, CHARACTER_MAXIMUM_LENGTH FROM INFORMATION_SCHEMA.COLUMNS
+  WHERE TABLE_NAME = 't_url_decode_materialize' AND COLUMN_NAME = 'v';
+DROP TABLE t_url_decode_materialize;
+
 UNINSTALL EXTENSION vsql_http;
