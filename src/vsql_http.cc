@@ -568,10 +568,13 @@ static void urldecode_impl(StringArg input, StringResult result) {
 // Registration
 // ============================================================
 
-// Buffer sizes:
+// Initial result buffer sizes:
 //   HTTP functions: 256KB — covers typical API responses used in SQL queries.
 //   urlencode/urldecode: 8KB — URL-encoded strings are rarely larger.
-// Responses exceeding the buffer are truncated at max_str_len bytes.
+// A longer result is not truncated: the function reports its full length, and
+// the server grows the buffer and calls the function again (an HTTP function
+// sends its request a second time). A result longer than max_allowed_packet
+// returns NULL with a warning.
 static constexpr size_t kHttpBufSize = 256 * 1024;
 static constexpr size_t kEncodeBufSize = 8 * 1024;
 
