@@ -10,9 +10,10 @@ cd /path/to/villagesql/build/mysql-test
 perl mysql-test-run.pl --suite=/path/to/vsql_http/mysql-test
 ```
 
-All 3 tests should pass offline:
+These tests should pass offline:
 - `vsql_http_encode` — urlencode/urldecode correctness and NULL handling
 - `vsql_http_requests` — all HTTP methods against a local Python HTTP server
+- `vsql_http_large` — responses larger than the result buffer come back whole, and each call sends one request
 
 A fourth test requires network access:
 - `vsql_http_live` — GET `https://villagesql.com/robots.txt`, verifies real HTTPS works end-to-end

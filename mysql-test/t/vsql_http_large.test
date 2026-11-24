@@ -1,0 +1,153 @@
+--echo # vsql_http — a response larger than the result buffer
+--echo # The server grows the result buffer and calls the function again when the
+--echo # JSON does not fit. Each SQL call must still send exactly one request.
+
+INSTALL EXTENSION vsql_http;
+
+# Helper server: /big?n=N&id=X answers with N bytes and counts requests per id;
+# /count?id=X answers with that count. Same foreground launcher as
+# vsql_http_requests.test: the --exec returns only after the child has bound a
+# port and written big_port.inc.
+--write_file $MYSQLTEST_VARDIR/tmp/big_server.py
+import sys, os, time, threading, subprocess, http.server, urllib.parse
+_dir = os.path.dirname(os.path.abspath(__file__))
+PORT_INC = os.path.join(_dir, 'big_port.inc')
+STOP_SH  = os.path.join(_dir, 'stop_big.sh')
+LOG      = os.path.join(_dir, 'big_server.log')
+
+def serve():
+    sys.stderr.write('big child: starting\n'); sys.stderr.flush()
+    def _watchdog():
+        time.sleep(60)
+        os._exit(0)
+    threading.Thread(target=_watchdog, daemon=True).start()
+    counts = {}
+    class H(http.server.BaseHTTPRequestHandler):
+        def handle_any(self):
+            n = int(self.headers.get('Content-Length', 0))
+            if n:
+                self.rfile.read(n)
+            u = urllib.parse.urlparse(self.path)
+            q = urllib.parse.parse_qs(u.query)
+            rid = q.get('id', [''])[0]
+            if u.path == '/count':
+                payload = str(counts.get(rid, 0)).encode()
+            else:
+                counts[rid] = counts.get(rid, 0) + 1
+                payload = b'a' * int(q.get('n', ['0'])[0])
+            self.send_response(200)
+            self.send_header('Content-Type', 'text/plain')
+            self.send_header('Content-Length', len(payload))
+            self.end_headers()
+            self.wfile.write(payload)
+        do_GET = do_POST = do_PUT = do_DELETE = do_PATCH = handle_any
+        def log_message(self, *a): pass
+    class Server(http.server.HTTPServer):
+        def server_bind(self):
+            import socketserver
+            socketserver.TCPServer.server_bind(self)
+            self.server_name = 'localhost'
+            self.server_port = self.server_address[1]
+    srv = Server(('127.0.0.1', 0), H)
+    with open(STOP_SH, 'w') as f:
+        f.write('kill %d\n' % os.getpid())
+    with open(PORT_INC, 'w') as f:
+        f.write('let $big_port = %d;\n' % srv.server_address[1])
+    srv.serve_forever()
+
+if '--serve' in sys.argv:
+    serve()
+    sys.exit(0)
+
+try:
+    os.remove(PORT_INC)
+except OSError:
+    pass
+logf = open(LOG, 'w')
+child = subprocess.Popen(
+    [sys.executable, '-B', os.path.abspath(__file__), '--serve'],
+    stdout=logf, stderr=logf, start_new_session=True)
+for _ in range(80):
+    if child.poll() is not None:
+        sys.stderr.write('big server exited early:\n' + open(LOG).read())
+        sys.exit(1)
+    if os.path.exists(PORT_INC):
+        sys.exit(0)
+    time.sleep(0.25)
+sys.stderr.write('big server not ready in time:\n' + open(LOG).read())
+sys.exit(1)
+EOF
+
+--exec python3 -B $MYSQLTEST_VARDIR/tmp/big_server.py
+--source $MYSQLTEST_VARDIR/tmp/big_port.inc
+--disable_query_log
+--eval SET @base = CONCAT('http://127.0.0.1:', $big_port, '/');
+--enable_query_log
+
+--echo # Each function, 300 KB body: whole content returned, one request sent
+SELECT CHAR_LENGTH(JSON_UNQUOTE(JSON_EXTRACT(vsql_http.http_get(CONCAT(@base, 'big?n=300000&id=get')), '$.content'))) AS get_len;
+SELECT CHAR_LENGTH(JSON_UNQUOTE(JSON_EXTRACT(vsql_http.http_post(CONCAT(@base, 'big?n=300000&id=post'), 'text/plain', 'x'), '$.content'))) AS post_len;
+SELECT CHAR_LENGTH(JSON_UNQUOTE(JSON_EXTRACT(vsql_http.http_put(CONCAT(@base, 'big?n=300000&id=put'), 'text/plain', 'x'), '$.content'))) AS put_len;
+SELECT CHAR_LENGTH(JSON_UNQUOTE(JSON_EXTRACT(vsql_http.http_delete(CONCAT(@base, 'big?n=300000&id=delete')), '$.content'))) AS delete_len;
+SELECT CHAR_LENGTH(JSON_UNQUOTE(JSON_EXTRACT(vsql_http.http_patch(CONCAT(@base, 'big?n=300000&id=patch'), 'text/plain', 'x'), '$.content'))) AS patch_len;
+SELECT CHAR_LENGTH(JSON_UNQUOTE(JSON_EXTRACT(vsql_http.http_request('POST', CONCAT(@base, 'big?n=300000&id=request'), NULL, 'x', 'text/plain', NULL), '$.content'))) AS request_len;
+
+--echo # 2 MB body
+SELECT CHAR_LENGTH(JSON_UNQUOTE(JSON_EXTRACT(vsql_http.http_get(CONCAT(@base, 'big?n=2000000&id=get2m')), '$.content'))) AS get2m_len;
+
+--echo # Small body
+SELECT CHAR_LENGTH(JSON_UNQUOTE(JSON_EXTRACT(vsql_http.http_get(CONCAT(@base, 'big?n=10&id=small')), '$.content'))) AS small_len;
+
+--echo # Two rows with the same arguments still send two requests
+SELECT CHAR_LENGTH(JSON_UNQUOTE(JSON_EXTRACT(vsql_http.http_post(CONCAT(@base, 'big?n=300000&id=tworows'), 'text/plain', 'x'), '$.content'))) AS len
+FROM (SELECT 1 AS k UNION ALL SELECT 2) rows2;
+
+--echo # Two identical calls in one statement send two requests
+SELECT
+  CHAR_LENGTH(JSON_UNQUOTE(JSON_EXTRACT(vsql_http.http_get(CONCAT(@base, 'big?n=300000&id=twocalls')), '$.content'))) AS len1,
+  CHAR_LENGTH(JSON_UNQUOTE(JSON_EXTRACT(vsql_http.http_get(CONCAT(@base, 'big?n=300000&id=twocalls')), '$.content'))) AS len2;
+
+--echo # A prepared statement executed twice sends two requests
+PREPARE stmt FROM "SELECT CHAR_LENGTH(JSON_UNQUOTE(JSON_EXTRACT(vsql_http.http_get(?), '$.content'))) AS len";
+SET @prep_url = CONCAT(@base, 'big?n=300000&id=prepared');
+EXECUTE stmt USING @prep_url;
+EXECUTE stmt USING @prep_url;
+DEALLOCATE PREPARE stmt;
+
+--echo # A result over max_allowed_packet gets no retry: NULL with a warning,
+--echo # one request, and the next call on the connection is unaffected
+SET @saved_map = @@global.max_allowed_packet;
+SET GLOBAL max_allowed_packet = 1048576;
+--connect (con1, localhost, root,,)
+--disable_query_log
+--eval SET @base = CONCAT('http://127.0.0.1:', $big_port, '/');
+--enable_query_log
+SELECT vsql_http.http_get(CONCAT(@base, 'big?n=2000000&id=over')) IS NULL AS over_is_null;
+SELECT CHAR_LENGTH(JSON_UNQUOTE(JSON_EXTRACT(vsql_http.http_get(CONCAT(@base, 'big?n=10&id=after')), '$.content'))) AS after_len;
+--disconnect con1
+--connection default
+SET GLOBAL max_allowed_packet = @saved_map;
+
+--echo # Requests that reached the helper server, per call
+SELECT
+  JSON_VALUE(vsql_http.http_get(CONCAT(@base, 'count?id=get')), '$.content') AS get_n,
+  JSON_VALUE(vsql_http.http_get(CONCAT(@base, 'count?id=post')), '$.content') AS post_n,
+  JSON_VALUE(vsql_http.http_get(CONCAT(@base, 'count?id=put')), '$.content') AS put_n,
+  JSON_VALUE(vsql_http.http_get(CONCAT(@base, 'count?id=delete')), '$.content') AS delete_n,
+  JSON_VALUE(vsql_http.http_get(CONCAT(@base, 'count?id=patch')), '$.content') AS patch_n,
+  JSON_VALUE(vsql_http.http_get(CONCAT(@base, 'count?id=request')), '$.content') AS request_n,
+  JSON_VALUE(vsql_http.http_get(CONCAT(@base, 'count?id=get2m')), '$.content') AS get2m_n,
+  JSON_VALUE(vsql_http.http_get(CONCAT(@base, 'count?id=small')), '$.content') AS small_n,
+  JSON_VALUE(vsql_http.http_get(CONCAT(@base, 'count?id=tworows')), '$.content') AS tworows_n,
+  JSON_VALUE(vsql_http.http_get(CONCAT(@base, 'count?id=twocalls')), '$.content') AS twocalls_n,
+  JSON_VALUE(vsql_http.http_get(CONCAT(@base, 'count?id=prepared')), '$.content') AS prepared_n,
+  JSON_VALUE(vsql_http.http_get(CONCAT(@base, 'count?id=over')), '$.content') AS over_n,
+  JSON_VALUE(vsql_http.http_get(CONCAT(@base, 'count?id=after')), '$.content') AS after_n;
+
+--exec sh $MYSQLTEST_VARDIR/tmp/stop_big.sh 2>/dev/null || true
+--remove_file $MYSQLTEST_VARDIR/tmp/stop_big.sh
+--remove_file $MYSQLTEST_VARDIR/tmp/big_server.py
+--remove_file $MYSQLTEST_VARDIR/tmp/big_port.inc
+--remove_file $MYSQLTEST_VARDIR/tmp/big_server.log
+
+UNINSTALL EXTENSION vsql_http;

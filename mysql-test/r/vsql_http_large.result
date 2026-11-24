@@ -1,0 +1,84 @@
+# vsql_http — a response larger than the result buffer
+# The server grows the result buffer and calls the function again when the
+# JSON does not fit. Each SQL call must still send exactly one request.
+INSTALL EXTENSION vsql_http;
+# Each function, 300 KB body: whole content returned, one request sent
+SELECT CHAR_LENGTH(JSON_UNQUOTE(JSON_EXTRACT(vsql_http.http_get(CONCAT(@base, 'big?n=300000&id=get')), '$.content'))) AS get_len;
+get_len
+300000
+SELECT CHAR_LENGTH(JSON_UNQUOTE(JSON_EXTRACT(vsql_http.http_post(CONCAT(@base, 'big?n=300000&id=post'), 'text/plain', 'x'), '$.content'))) AS post_len;
+post_len
+300000
+SELECT CHAR_LENGTH(JSON_UNQUOTE(JSON_EXTRACT(vsql_http.http_put(CONCAT(@base, 'big?n=300000&id=put'), 'text/plain', 'x'), '$.content'))) AS put_len;
+put_len
+300000
+SELECT CHAR_LENGTH(JSON_UNQUOTE(JSON_EXTRACT(vsql_http.http_delete(CONCAT(@base, 'big?n=300000&id=delete')), '$.content'))) AS delete_len;
+delete_len
+300000
+SELECT CHAR_LENGTH(JSON_UNQUOTE(JSON_EXTRACT(vsql_http.http_patch(CONCAT(@base, 'big?n=300000&id=patch'), 'text/plain', 'x'), '$.content'))) AS patch_len;
+patch_len
+300000
+SELECT CHAR_LENGTH(JSON_UNQUOTE(JSON_EXTRACT(vsql_http.http_request('POST', CONCAT(@base, 'big?n=300000&id=request'), NULL, 'x', 'text/plain', NULL), '$.content'))) AS request_len;
+request_len
+300000
+# 2 MB body
+SELECT CHAR_LENGTH(JSON_UNQUOTE(JSON_EXTRACT(vsql_http.http_get(CONCAT(@base, 'big?n=2000000&id=get2m')), '$.content'))) AS get2m_len;
+get2m_len
+2000000
+# Small body
+SELECT CHAR_LENGTH(JSON_UNQUOTE(JSON_EXTRACT(vsql_http.http_get(CONCAT(@base, 'big?n=10&id=small')), '$.content'))) AS small_len;
+small_len
+10
+# Two rows with the same arguments still send two requests
+SELECT CHAR_LENGTH(JSON_UNQUOTE(JSON_EXTRACT(vsql_http.http_post(CONCAT(@base, 'big?n=300000&id=tworows'), 'text/plain', 'x'), '$.content'))) AS len
+FROM (SELECT 1 AS k UNION ALL SELECT 2) rows2;
+len
+300000
+300000
+# Two identical calls in one statement send two requests
+SELECT
+CHAR_LENGTH(JSON_UNQUOTE(JSON_EXTRACT(vsql_http.http_get(CONCAT(@base, 'big?n=300000&id=twocalls')), '$.content'))) AS len1,
+CHAR_LENGTH(JSON_UNQUOTE(JSON_EXTRACT(vsql_http.http_get(CONCAT(@base, 'big?n=300000&id=twocalls')), '$.content'))) AS len2;
+len1	len2
+300000	300000
+# A prepared statement executed twice sends two requests
+PREPARE stmt FROM "SELECT CHAR_LENGTH(JSON_UNQUOTE(JSON_EXTRACT(vsql_http.http_get(?), '$.content'))) AS len";
+SET @prep_url = CONCAT(@base, 'big?n=300000&id=prepared');
+EXECUTE stmt USING @prep_url;
+len
+300000
+EXECUTE stmt USING @prep_url;
+len
+300000
+DEALLOCATE PREPARE stmt;
+# A result over max_allowed_packet gets no retry: NULL with a warning,
+# one request, and the next call on the connection is unaffected
+SET @saved_map = @@global.max_allowed_packet;
+SET GLOBAL max_allowed_packet = 1048576;
+SELECT vsql_http.http_get(CONCAT(@base, 'big?n=2000000&id=over')) IS NULL AS over_is_null;
+over_is_null
+1
+Warnings:
+Warning	1301	Result of http_get() was larger than max_allowed_packet (1048576) - truncated
+SELECT CHAR_LENGTH(JSON_UNQUOTE(JSON_EXTRACT(vsql_http.http_get(CONCAT(@base, 'big?n=10&id=after')), '$.content'))) AS after_len;
+after_len
+10
+SET GLOBAL max_allowed_packet = @saved_map;
+# Requests that reached the helper server, per call
+SELECT
+JSON_VALUE(vsql_http.http_get(CONCAT(@base, 'count?id=get')), '$.content') AS get_n,
+JSON_VALUE(vsql_http.http_get(CONCAT(@base, 'count?id=post')), '$.content') AS post_n,
+JSON_VALUE(vsql_http.http_get(CONCAT(@base, 'count?id=put')), '$.content') AS put_n,
+JSON_VALUE(vsql_http.http_get(CONCAT(@base, 'count?id=delete')), '$.content') AS delete_n,
+JSON_VALUE(vsql_http.http_get(CONCAT(@base, 'count?id=patch')), '$.content') AS patch_n,
+JSON_VALUE(vsql_http.http_get(CONCAT(@base, 'count?id=request')), '$.content') AS request_n,
+JSON_VALUE(vsql_http.http_get(CONCAT(@base, 'count?id=get2m')), '$.content') AS get2m_n,
+JSON_VALUE(vsql_http.http_get(CONCAT(@base, 'count?id=small')), '$.content') AS small_n,
+JSON_VALUE(vsql_http.http_get(CONCAT(@base, 'count?id=tworows')), '$.content') AS tworows_n,
+JSON_VALUE(vsql_http.http_get(CONCAT(@base, 'count?id=twocalls')), '$.content') AS twocalls_n,
+JSON_VALUE(vsql_http.http_get(CONCAT(@base, 'count?id=prepared')), '$.content') AS prepared_n,
+JSON_VALUE(vsql_http.http_get(CONCAT(@base, 'count?id=over')), '$.content') AS over_n,
+JSON_VALUE(vsql_http.http_get(CONCAT(@base, 'count?id=after')), '$.content') AS after_n;
+get_n	post_n	put_n	delete_n	patch_n	request_n	get2m_n	small_n	tworows_n	twocalls_n	prepared_n	over_n	after_n
+1	1	1	1	1	1	1	1	2	2	2	1	1
+UNINSTALL EXTENSION vsql_http;
