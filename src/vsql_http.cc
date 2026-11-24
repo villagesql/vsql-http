@@ -569,6 +569,9 @@ static void urldecode_impl(StringArg input, StringResult result) {
 //   HTTP functions: 256KB — covers typical API responses used in SQL queries.
 //   urlencode/urldecode: 8KB — URL-encoded strings are rarely larger.
 // Responses exceeding the buffer are truncated at max_str_len bytes.
+// Also passed to .max_result_length() below, so a materialized result (e.g.
+// CREATE TABLE ... AS SELECT) sizes its column from the real output cap
+// instead of the width of the argument(s).
 static constexpr size_t kHttpBufSize = 256 * 1024;
 static constexpr size_t kEncodeBufSize = 8 * 1024;
 
@@ -578,11 +581,13 @@ VEF_GENERATE_ENTRY_POINTS(
     make_extension()
         .func(make_func<&http_get_1_impl>("http_get")
                   .returns(STRING)
+                  .max_result_length(kHttpBufSize)
                   .param(STRING)
                   .buffer_size(kHttpBufSize)
                   .build())
         .func(make_func<&http_post_3_impl>("http_post")
                   .returns(STRING)
+                  .max_result_length(kHttpBufSize)
                   .param(STRING)
                   .param(STRING)
                   .param(STRING)
@@ -590,6 +595,7 @@ VEF_GENERATE_ENTRY_POINTS(
                   .build())
         .func(make_func<&http_put_3_impl>("http_put")
                   .returns(STRING)
+                  .max_result_length(kHttpBufSize)
                   .param(STRING)
                   .param(STRING)
                   .param(STRING)
@@ -597,11 +603,13 @@ VEF_GENERATE_ENTRY_POINTS(
                   .build())
         .func(make_func<&http_delete_1_impl>("http_delete")
                   .returns(STRING)
+                  .max_result_length(kHttpBufSize)
                   .param(STRING)
                   .buffer_size(kHttpBufSize)
                   .build())
         .func(make_func<&http_patch_3_impl>("http_patch")
                   .returns(STRING)
+                  .max_result_length(kHttpBufSize)
                   .param(STRING)
                   .param(STRING)
                   .param(STRING)
@@ -609,6 +617,7 @@ VEF_GENERATE_ENTRY_POINTS(
                   .build())
         .func(make_func<&http_6_impl>("http_request")
                   .returns(STRING)
+                  .max_result_length(kHttpBufSize)
                   .param(STRING)
                   .param(STRING)
                   .param(STRING)
@@ -619,12 +628,14 @@ VEF_GENERATE_ENTRY_POINTS(
                   .build())
         .func(make_func<&urlencode_impl>("url_encode")
                   .returns(STRING)
+                  .max_result_length(kEncodeBufSize)
                   .param(STRING)
                   .buffer_size(kEncodeBufSize)
                   .deterministic()
                   .build())
         .func(make_func<&urldecode_impl>("url_decode")
                   .returns(STRING)
+                  .max_result_length(kEncodeBufSize)
                   .param(STRING)
                   .buffer_size(kEncodeBufSize)
                   .deterministic()
