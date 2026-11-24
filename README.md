@@ -25,6 +25,7 @@ extensions, or if you are working on this extension itself.
 
 ### Prerequisites
 
+- VillageSQL 0.0.8 or later, for both the build directory and the server (the extension uses extension protocol 5)
 - VillageSQL build directory (specified via `VillageSQL_BUILD_DIR`)
 - CMake 3.16 or higher
 - C++17 compatible compiler
@@ -271,11 +272,10 @@ harmless to keep either way, which is why every example above uses it.
 extracted value exceeds its internal size limit. For responses with large bodies,
 use `JSON_UNQUOTE(JSON_EXTRACT(...))` to read the content field.
 
-**Response truncation**: The returned envelope is truncated at 262144 bytes
-(256KB). The cut is at a byte boundary and can land inside the `content` string,
-which leaves the value unparseable — every `JSON_*` function on it then raises
-ERROR 3141 rather than returning a shortened body. Check
-`LENGTH(response) < 262144` before parsing.
+**Response size**: The returned envelope can be as large as
+`max_allowed_packet`. A larger one returns NULL with Warning 1301, which names
+the function and the session's `max_allowed_packet`:
+`Result of http_get() was larger than max_allowed_packet (<bytes>) - truncated`.
 
 **HTTP functions are not deterministic**: `http_get`, `http_post`, `http_put`,
 `http_delete`, `http_patch`, and `http_request` perform network I/O, so the server
@@ -295,12 +295,6 @@ CREATE TABLE feeds (u VARCHAR(255) NOT NULL, encoded TEXT AS (url_encode(u)) STO
 function name. To pass custom headers, use the generic `http_request()` function
 instead of `http_get()`.
 → [Open issue](https://github.com/villagesql/villagesql-server/issues/new?title=VEF:+support+function+overloading+%28multiple+VDF+signatures+with+same+name%2C+different+arity%29)
-
-**`alt_str_buf` not populated**: VEF's `alt_str_buf` field in `vef_vdf_result_t`
-is designed for variable-length zero-copy string returns, but the server never
-populates it. All results go through the fixed `str_buf`, causing the 256KB
-truncation limit.
-→ [Open issue](https://github.com/villagesql/villagesql-server/issues/new?title=VEF:+implement+alt_str_buf+in+vef_vdf_result_t+for+variable-length+zero-copy+string+returns)
 
 ## Reporting Bugs and Requesting Features
 

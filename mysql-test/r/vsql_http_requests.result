@@ -63,6 +63,21 @@ GET	POST	DELETE
 SELECT JSON_VALUE(JSON_UNQUOTE(JSON_EXTRACT(CONVERT(vsql_http.http_request('purge', @echo_url, NULL, NULL, NULL, NULL) USING utf8mb4), '$.content')), '$.method') AS purge_method;
 purge_method
 purge
+# Materialization: CREATE TABLE AS SELECT must size the column from
+# max_result_length (VEF_MAX_RESULT_LENGTH), not from the width of the (short,
+# literal) URL argument. A plain user variable's static type already
+# carries a generic large width regardless of the fix, so the URL is
+# substituted as a literal (via the MTR-level echo_port variable, not
+# a SQL session variable) to actually exercise argument-width sizing.
+# The echoed response, headers included, is far longer than the URL
+# and must not come back as truncated (invalid) JSON.
+SELECT JSON_VALID(CONVERT(v USING utf8mb4)) AS is_valid_json FROM t_http_get_materialize;
+is_valid_json
+1
+SELECT JSON_VALUE(JSON_UNQUOTE(JSON_EXTRACT(CONVERT(v USING utf8mb4), '$.content')), '$.method') AS method FROM t_http_get_materialize;
+method
+GET
+DROP TABLE t_http_get_materialize;
 # NULL url returns NULL
 SELECT vsql_http.http_get(NULL) IS NULL AS is_null;
 is_null

@@ -149,6 +149,21 @@ SELECT
 --echo # http_request: a non-standard method is sent as given
 SELECT JSON_VALUE(JSON_UNQUOTE(JSON_EXTRACT(CONVERT(vsql_http.http_request('purge', @echo_url, NULL, NULL, NULL, NULL) USING utf8mb4), '$.content')), '$.method') AS purge_method;
 
+--echo # Materialization: CREATE TABLE AS SELECT must size the column from
+--echo # max_result_length (VEF_MAX_RESULT_LENGTH), not from the width of the (short,
+--echo # literal) URL argument. A plain user variable's static type already
+--echo # carries a generic large width regardless of the fix, so the URL is
+--echo # substituted as a literal (via the MTR-level echo_port variable, not
+--echo # a SQL session variable) to actually exercise argument-width sizing.
+--echo # The echoed response, headers included, is far longer than the URL
+--echo # and must not come back as truncated (invalid) JSON.
+--disable_query_log
+--eval CREATE TABLE t_http_get_materialize AS SELECT vsql_http.http_get('http://127.0.0.1:$echo_port/') AS v
+--enable_query_log
+SELECT JSON_VALID(CONVERT(v USING utf8mb4)) AS is_valid_json FROM t_http_get_materialize;
+SELECT JSON_VALUE(JSON_UNQUOTE(JSON_EXTRACT(CONVERT(v USING utf8mb4), '$.content')), '$.method') AS method FROM t_http_get_materialize;
+DROP TABLE t_http_get_materialize;
+
 --echo # NULL url returns NULL
 SELECT vsql_http.http_get(NULL) IS NULL AS is_null;
 

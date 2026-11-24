@@ -22,4 +22,24 @@ SELECT vsql_http.url_decode(vsql_http.url_encode('hello world & more'));
 SELECT vsql_http.url_encode(NULL);
 SELECT vsql_http.url_decode(NULL);
 
+--echo # Materialization: CREATE TABLE AS SELECT must size the column from
+--echo # max_result_length (the function's declared VEF_MAX_RESULT_LENGTH output
+--echo # cap), not from the width of the argument -- even for a deliberately
+--echo # tiny argument, the declared column width must reflect the real
+--echo # output cap, not shrink to fit. (The argument is a literal
+--echo # expression, not a SQL variable, so the server computes its width
+--echo # precisely instead of falling back to a generic large default for
+--echo # variables of unknown length.)
+CREATE TABLE t_url_encode_materialize AS SELECT vsql_http.url_encode(REPEAT('!', 10)) AS v;
+SELECT DATA_TYPE, CHARACTER_MAXIMUM_LENGTH FROM INFORMATION_SCHEMA.COLUMNS
+  WHERE TABLE_NAME = 't_url_encode_materialize' AND COLUMN_NAME = 'v';
+DROP TABLE t_url_encode_materialize;
+
+--echo # url_decode declares no max_result_length: its output is never longer
+--echo # than its input, so the column is sized from the argument width.
+CREATE TABLE t_url_decode_materialize AS SELECT vsql_http.url_decode('%41%42') AS v;
+SELECT DATA_TYPE, CHARACTER_MAXIMUM_LENGTH FROM INFORMATION_SCHEMA.COLUMNS
+  WHERE TABLE_NAME = 't_url_decode_materialize' AND COLUMN_NAME = 'v';
+DROP TABLE t_url_decode_materialize;
+
 UNINSTALL EXTENSION vsql_http;
