@@ -84,7 +84,7 @@ All functions return NULL for NULL input. HTTP functions return NULL with Warnin
 - Options JSON supports: `timeout` (int), `proxy`, `user_agent`, `ssl_cert`, `ssl_key`, `ssl_ca_bundle` (strings)
 
 **Dependencies:**
-- VillageSQL Extension Framework SDK (`<villagesql/vsql.h>`, Protocol V3)
+- VillageSQL Extension Framework SDK (`<villagesql/vsql.h>`, Protocol V5): build against VillageSQL 0.0.8 or later, and install on a 0.0.8 or later server
 - libcurl: `libcurl4-openssl-dev` (Ubuntu/Debian), `libcurl-devel` (RHEL/Fedora), Xcode Command Line Tools (macOS)
 
 **Code Organization:**
@@ -92,9 +92,9 @@ All functions return NULL for NULL input. HTTP functions return NULL with Warnin
 - Function naming: lowercase with underscores (e.g., `http_get_1_impl`)
 - Variable naming: lowercase with underscores (e.g., `response_body`)
 
-## VillageSQL Extension Framework (VEF) API Pattern — Protocol V3
+## VillageSQL Extension Framework (VEF) API Pattern — Protocol V5
 
-This extension uses the Protocol V3 stable SDK (`<villagesql/vsql.h>`).
+This extension uses the Protocol V5 stable SDK (`<villagesql/vsql.h>`).
 
 ### Function Implementation Pattern
 
@@ -122,7 +122,7 @@ VEF_GENERATE_ENTRY_POINTS(
 )
 ```
 
-Extension name and version come from `manifest.json`; `make_extension()` takes no arguments in V3.
+Extension name and version come from `manifest.json`; `make_extension()` takes no arguments in V5.
 
 ## Testing
 

@@ -569,25 +569,29 @@ static void urldecode_impl(StringArg input, StringResult result) {
 //   HTTP functions: 256KB — covers typical API responses used in SQL queries.
 //   urlencode/urldecode: 8KB — URL-encoded strings are rarely larger.
 // Responses exceeding the buffer are truncated at max_str_len bytes.
-// Also passed to .max_result_length() below, so a materialized result (e.g.
-// CREATE TABLE ... AS SELECT) sizes its column from the real output cap
-// instead of the width of the argument(s).
 static constexpr size_t kHttpBufSize = 256 * 1024;
 static constexpr size_t kEncodeBufSize = 8 * 1024;
 
+// .max_result_length() below is VEF_MAX_RESULT_LENGTH, the widest result
+// column the server allows, not these buffer sizes: this extension does not
+// limit the length of an HTTP response, and url_encode output is up to three
+// times as long as its input. Without it, a materialized result (e.g. CREATE
+// TABLE ... AS SELECT) is sized from the width of the argument(s), and a
+// longer result does not fit.
+//
 // Note: VEF does not support function overloading. Each function name maps
 // to exactly one signature. For HTTP calls with custom headers, use http().
 VEF_GENERATE_ENTRY_POINTS(
     make_extension()
         .func(make_func<&http_get_1_impl>("http_get")
                   .returns(STRING)
-                  .max_result_length(kHttpBufSize)
+                  .max_result_length(VEF_MAX_RESULT_LENGTH)
                   .param(STRING)
                   .buffer_size(kHttpBufSize)
                   .build())
         .func(make_func<&http_post_3_impl>("http_post")
                   .returns(STRING)
-                  .max_result_length(kHttpBufSize)
+                  .max_result_length(VEF_MAX_RESULT_LENGTH)
                   .param(STRING)
                   .param(STRING)
                   .param(STRING)
@@ -595,7 +599,7 @@ VEF_GENERATE_ENTRY_POINTS(
                   .build())
         .func(make_func<&http_put_3_impl>("http_put")
                   .returns(STRING)
-                  .max_result_length(kHttpBufSize)
+                  .max_result_length(VEF_MAX_RESULT_LENGTH)
                   .param(STRING)
                   .param(STRING)
                   .param(STRING)
@@ -603,13 +607,13 @@ VEF_GENERATE_ENTRY_POINTS(
                   .build())
         .func(make_func<&http_delete_1_impl>("http_delete")
                   .returns(STRING)
-                  .max_result_length(kHttpBufSize)
+                  .max_result_length(VEF_MAX_RESULT_LENGTH)
                   .param(STRING)
                   .buffer_size(kHttpBufSize)
                   .build())
         .func(make_func<&http_patch_3_impl>("http_patch")
                   .returns(STRING)
-                  .max_result_length(kHttpBufSize)
+                  .max_result_length(VEF_MAX_RESULT_LENGTH)
                   .param(STRING)
                   .param(STRING)
                   .param(STRING)
@@ -617,7 +621,7 @@ VEF_GENERATE_ENTRY_POINTS(
                   .build())
         .func(make_func<&http_6_impl>("http_request")
                   .returns(STRING)
-                  .max_result_length(kHttpBufSize)
+                  .max_result_length(VEF_MAX_RESULT_LENGTH)
                   .param(STRING)
                   .param(STRING)
                   .param(STRING)
@@ -628,14 +632,14 @@ VEF_GENERATE_ENTRY_POINTS(
                   .build())
         .func(make_func<&urlencode_impl>("url_encode")
                   .returns(STRING)
-                  .max_result_length(kEncodeBufSize)
+                  .max_result_length(VEF_MAX_RESULT_LENGTH)
                   .param(STRING)
                   .buffer_size(kEncodeBufSize)
                   .deterministic()
                   .build())
         .func(make_func<&urldecode_impl>("url_decode")
                   .returns(STRING)
-                  .max_result_length(kEncodeBufSize)
+                  .max_result_length(VEF_MAX_RESULT_LENGTH)
                   .param(STRING)
                   .buffer_size(kEncodeBufSize)
                   .deterministic()

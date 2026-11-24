@@ -64,7 +64,7 @@ SELECT JSON_VALUE(JSON_UNQUOTE(JSON_EXTRACT(CONVERT(vsql_http.http_request('purg
 purge_method
 purge
 # Materialization: CREATE TABLE AS SELECT must size the column from
-# max_result_length (256KB), not from the width of the (short,
+# max_result_length (VEF_MAX_RESULT_LENGTH), not from the width of the (short,
 # literal) URL argument. A plain user variable's static type already
 # carries a generic large width regardless of the fix, so the URL is
 # substituted as a literal (via the MTR-level echo_port variable, not

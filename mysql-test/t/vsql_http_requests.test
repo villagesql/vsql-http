@@ -150,7 +150,7 @@ SELECT
 SELECT JSON_VALUE(JSON_UNQUOTE(JSON_EXTRACT(CONVERT(vsql_http.http_request('purge', @echo_url, NULL, NULL, NULL, NULL) USING utf8mb4), '$.content')), '$.method') AS purge_method;
 
 --echo # Materialization: CREATE TABLE AS SELECT must size the column from
---echo # max_result_length (256KB), not from the width of the (short,
+--echo # max_result_length (VEF_MAX_RESULT_LENGTH), not from the width of the (short,
 --echo # literal) URL argument. A plain user variable's static type already
 --echo # carries a generic large width regardless of the fix, so the URL is
 --echo # substituted as a literal (via the MTR-level echo_port variable, not

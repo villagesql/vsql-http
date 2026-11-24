@@ -40,7 +40,7 @@ perl mysql-test-run.pl --suite=/path/to/vsql_http/mysql-test --record
 - Round-trip: `urldecode(urlencode(s)) = s`
 - NULL input → NULL return
 - `CREATE TABLE ... AS SELECT url_encode(...)` sizes the materialized column
-  from `max_result_length` (8192 characters), not from a short argument's
+  from `max_result_length` (`VEF_MAX_RESULT_LENGTH`), not from a short argument's
   own width
 
 **vsql_http_requests.test**
@@ -50,7 +50,7 @@ perl mysql-test-run.pl --suite=/path/to/vsql_http/mysql-test --record
 - `http()` with custom header → status 200
 - `http_post`, `http_delete`, `http_put`, `http_patch` → each returns a status code
 - `CREATE TABLE ... AS SELECT http_get(...)` sizes the materialized column
-  from `max_result_length` (256KB), not from the short literal URL argument
+  from `max_result_length` (`VEF_MAX_RESULT_LENGTH`), not from the short literal URL argument
   -- the echoed response (headers included) comes back as valid, untruncated
   JSON
 - NULL URL → NULL return

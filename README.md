@@ -25,6 +25,7 @@ extensions, or if you are working on this extension itself.
 
 ### Prerequisites
 
+- VillageSQL 0.0.8 or later, for both the build directory and the server (the extension uses extension protocol 5)
 - VillageSQL build directory (specified via `VillageSQL_BUILD_DIR`)
 - CMake 3.16 or higher
 - C++17 compatible compiler

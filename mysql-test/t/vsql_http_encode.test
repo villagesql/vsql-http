@@ -23,7 +23,7 @@ SELECT vsql_http.url_encode(NULL);
 SELECT vsql_http.url_decode(NULL);
 
 --echo # Materialization: CREATE TABLE AS SELECT must size the column from
---echo # max_result_length (the function's declared 8192-character output
+--echo # max_result_length (the function's declared VEF_MAX_RESULT_LENGTH output
 --echo # cap), not from the width of the argument -- even for a deliberately
 --echo # tiny argument, the declared column width must reflect the real
 --echo # output cap, not shrink to fit. (The argument is a literal
