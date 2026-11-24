@@ -39,6 +39,8 @@ perl mysql-test-run.pl --suite=/path/to/vsql_http/mysql-test --record
 - `urldecode` inverses
 - Round-trip: `urldecode(urlencode(s)) = s`
 - NULL input → NULL return
+- Output longer than the 8192-byte buffer comes back in full via the
+  server's grow-and-retry, not truncated to buffer_size
 
 **vsql_http_requests.test**
 - Starts a Python HTTP server on port 18777 serving `$MYSQLTEST_VARDIR`

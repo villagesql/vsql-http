@@ -40,4 +40,24 @@ NULL
 SELECT vsql_http.url_decode(NULL);
 vsql_http.url_decode(NULL)
 NULL
+# Overflow: output longer than the declared buffer (url_encode/url_decode
+# share an 8192-byte buffer_size, above the server's 1024-byte minimum
+# allocation quantum, so this input must clear both to exercise the
+# overflow path) must come back in full, not truncated to buffer_size:
+# the VDF reports the true output length and the server grows the
+# result buffer and retries once.
+SET @long_raw = REPEAT('!', 10000);
+SET @long_encoded = REPEAT('%21', 10000);
+SELECT LENGTH(vsql_http.url_encode(@long_raw)) AS encoded_len;
+encoded_len
+30000
+SELECT vsql_http.url_encode(@long_raw) = @long_encoded AS encoded_matches;
+encoded_matches
+1
+SELECT LENGTH(vsql_http.url_decode(@long_encoded)) AS decoded_len;
+decoded_len
+10000
+SELECT vsql_http.url_decode(@long_encoded) = @long_raw AS decoded_matches;
+decoded_matches
+1
 UNINSTALL EXTENSION vsql_http;
