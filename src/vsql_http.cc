@@ -535,7 +535,10 @@ static void curl_codec_impl(StringArg input, StringResult result,
     size_t copy_len = buf_len < dst.size() ? buf_len : dst.size();
     memcpy(dst.data(), buf, copy_len);
     curl_free(buf);
-    result.set_length(copy_len);
+    // Report the true (unclamped) length so the server's dispatcher grows
+    // the buffer and retries once with enough room; only copy_len bytes of
+    // dst are valid on this, possibly-overflowing, attempt.
+    result.set_length(buf_len);
   } catch (...) {
     result.warning(std::string(func_name) + ": internal error");
   }
