@@ -40,4 +40,18 @@ NULL
 SELECT vsql_http.url_decode(NULL);
 vsql_http.url_decode(NULL)
 NULL
+# Materialization: CREATE TABLE AS SELECT must size the column from
+# max_result_length (the function's declared 8192-character output
+# cap), not from the width of the argument -- even for a deliberately
+# tiny argument, the declared column width must reflect the real
+# output cap, not shrink to fit. (The argument is a literal
+# expression, not a SQL variable, so the server computes its width
+# precisely instead of falling back to a generic large default for
+# variables of unknown length.)
+CREATE TABLE t_url_encode_materialize AS SELECT vsql_http.url_encode(REPEAT('!', 10)) AS v;
+SELECT DATA_TYPE, CHARACTER_MAXIMUM_LENGTH FROM INFORMATION_SCHEMA.COLUMNS
+WHERE TABLE_NAME = 't_url_encode_materialize' AND COLUMN_NAME = 'v';
+DATA_TYPE	CHARACTER_MAXIMUM_LENGTH
+text	65535
+DROP TABLE t_url_encode_materialize;
 UNINSTALL EXTENSION vsql_http;

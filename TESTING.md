@@ -39,6 +39,9 @@ perl mysql-test-run.pl --suite=/path/to/vsql_http/mysql-test --record
 - `urldecode` inverses
 - Round-trip: `urldecode(urlencode(s)) = s`
 - NULL input → NULL return
+- `CREATE TABLE ... AS SELECT url_encode(...)` sizes the materialized column
+  from `max_result_length` (8192 characters), not from a short argument's
+  own width
 
 **vsql_http_requests.test**
 - Starts a Python HTTP server on port 18777 serving `$MYSQLTEST_VARDIR`
@@ -46,6 +49,10 @@ perl mysql-test-run.pl --suite=/path/to/vsql_http/mysql-test --record
 - `http()` generic GET → status 200
 - `http()` with custom header → status 200
 - `http_post`, `http_delete`, `http_put`, `http_patch` → each returns a status code
+- `CREATE TABLE ... AS SELECT http_get(...)` sizes the materialized column
+  from `max_result_length` (256KB), not from the short literal URL argument
+  -- the echoed response (headers included) comes back as valid, untruncated
+  JSON
 - NULL URL → NULL return
 - Connection refused → NULL return with curl's error as Warning 3200
 - Tears down the HTTP server with `pkill` after the test
