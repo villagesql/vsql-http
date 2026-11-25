@@ -561,7 +561,10 @@ static void curl_codec_impl(StringArg input, StringResult result,
     size_t copy_len = buf_len < dst.size() ? buf_len : dst.size();
     memcpy(dst.data(), buf, copy_len);
     curl_free(buf);
-    result.set_length(copy_len);
+    // Report the true (unclamped) length so the server's dispatcher grows
+    // the buffer and retries once with enough room; only copy_len bytes of
+    // dst are valid on this, possibly-overflowing, attempt.
+    result.set_length(buf_len);
   } catch (...) {
     result.warning(std::string(func_name) + ": internal error");
   }
@@ -591,12 +594,13 @@ static void urldecode_impl(StringArg input, StringResult result) {
 // Registration
 // ============================================================
 
-// Buffer sizes:
+// Initial result buffer sizes:
 //   HTTP functions: 256KB — covers typical API responses used in SQL queries.
 //     A larger response grows the buffer through the server's retry (see
 //     http_call); max_allowed_packet is the limit.
 //   urlencode/urldecode: 8KB — URL-encoded strings are rarely larger.
-//     curl_codec_impl truncates longer output to the buffer.
+//     Longer output grows the buffer the same way: curl_codec_impl reports
+//     the full length, and the server calls the function again.
 static constexpr size_t kHttpBufSize = 256 * 1024;
 static constexpr size_t kEncodeBufSize = 8 * 1024;
 

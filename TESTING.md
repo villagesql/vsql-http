@@ -40,6 +40,8 @@ perl mysql-test-run.pl --suite=/path/to/vsql_http/mysql-test --record
 - `urldecode` inverses
 - Round-trip: `urldecode(urlencode(s)) = s`
 - NULL input → NULL return
+- Output longer than the 8192-byte buffer comes back in full via the
+  server's grow-and-retry, not truncated to buffer_size
 - `CREATE TABLE ... AS SELECT url_encode(...)` sizes the materialized column
   from `max_result_length` (`VEF_MAX_RESULT_LENGTH`), not from a short argument's
   own width

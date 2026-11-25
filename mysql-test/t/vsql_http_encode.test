@@ -22,6 +22,19 @@ SELECT vsql_http.url_decode(vsql_http.url_encode('hello world & more'));
 SELECT vsql_http.url_encode(NULL);
 SELECT vsql_http.url_decode(NULL);
 
+--echo # Overflow: output longer than the declared buffer (url_encode/url_decode
+--echo # share an 8192-byte buffer_size, above the server's 1024-byte minimum
+--echo # allocation quantum, so this input must clear both to exercise the
+--echo # overflow path) must come back in full, not truncated to buffer_size:
+--echo # the VDF reports the true output length and the server grows the
+--echo # result buffer and retries once.
+SET @long_raw = REPEAT('!', 10000);
+SET @long_encoded = REPEAT('%21', 10000);
+SELECT LENGTH(vsql_http.url_encode(@long_raw)) AS encoded_len;
+SELECT vsql_http.url_encode(@long_raw) = @long_encoded AS encoded_matches;
+SELECT LENGTH(vsql_http.url_decode(@long_encoded)) AS decoded_len;
+SELECT vsql_http.url_decode(@long_encoded) = @long_raw AS decoded_matches;
+
 --echo # Materialization: CREATE TABLE AS SELECT must size the column from
 --echo # max_result_length (the function's declared VEF_MAX_RESULT_LENGTH output
 --echo # cap), not from the width of the argument -- even for a deliberately
