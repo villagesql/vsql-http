@@ -428,13 +428,38 @@ static bool do_http(std::string_view method, std::string_view url,
 // VDF implementations
 // ============================================================
 
+// When the JSON does not fit the result buffer, the server grows the buffer
+// and calls the function again with the same arguments (vdf_handler::val_str).
+// That second call must not send the request again, so the first call keeps
+// its JSON in the call's state and the second call copies it. Each SQL call
+// site gets its own state from http_prerun, and http_postrun frees it when the
+// statement ends, so a retry that never comes (a result over
+// max_allowed_packet) holds the memory no longer than the statement.
+struct HttpState {
+  std::string pending;
+};
+
+static void http_prerun(PrerunArgs, PrerunResult r) {
+  r.set_user_data(new HttpState{});
+}
+
+static void http_postrun(PostrunArgs a) { a.delete_state<HttpState>(); }
+
 // Shared wrapper: null-checks url, calls fn(out) to run the request, and
 // writes the JSON response, or NULL with a warning carrying the curl error.
 // The server prefixes the warning with the function name.
 template <typename Fn>
-static void http_call(StringArg url, StringResult result, const char *func_name,
-                      Fn fn) {
+static void http_call(HttpState &st, StringArg url, StringResult result,
+                      const char *func_name, Fn fn) {
   try {
+    // Only the retry has a buffer big enough for the kept JSON: the server
+    // grows the buffer for nothing else. Any other call drops the entry.
+    if (!st.pending.empty() && st.pending.size() <= result.buffer().size()) {
+      result.set(st.pending);
+      std::string().swap(st.pending);
+      return;
+    }
+    std::string().swap(st.pending);
     if (url.is_null()) {
       result.set_null();
       return;
@@ -445,46 +470,47 @@ static void http_call(StringArg url, StringResult result, const char *func_name,
       return;
     }
     result.set(r);
+    if (r.size() > result.buffer().size()) st.pending = std::move(r);
   } catch (...) {
     result.warning(std::string(func_name) + ": internal error");
   }
 }
 
-static void http_get_1_impl(StringArg url, StringResult result) {
-  http_call(url, result, "http_get",
-            [&](std::string &r) {
-              return do_http("GET", url.value(), {}, {}, {}, r);
-            });
+static void http_get_1_impl(HttpState &st, StringArg url,
+                            StringResult result) {
+  http_call(st, url, result, "http_get", [&](std::string &r) {
+    return do_http("GET", url.value(), {}, {}, {}, r);
+  });
 }
 
-static void http_post_3_impl(StringArg url, StringArg ct, StringArg body,
-                             StringResult result) {
-  http_call(url, result, "http_post", [&](std::string &r) {
+static void http_post_3_impl(HttpState &st, StringArg url, StringArg ct,
+                             StringArg body, StringResult result) {
+  http_call(st, url, result, "http_post", [&](std::string &r) {
     return do_http("POST", url.value(), {},
                    body.is_null() ? std::string_view{} : body.value(),
                    ct.is_null() ? std::string_view{} : ct.value(), r);
   });
 }
 
-static void http_put_3_impl(StringArg url, StringArg ct, StringArg body,
-                            StringResult result) {
-  http_call(url, result, "http_put", [&](std::string &r) {
+static void http_put_3_impl(HttpState &st, StringArg url, StringArg ct,
+                            StringArg body, StringResult result) {
+  http_call(st, url, result, "http_put", [&](std::string &r) {
     return do_http("PUT", url.value(), {},
                    body.is_null() ? std::string_view{} : body.value(),
                    ct.is_null() ? std::string_view{} : ct.value(), r);
   });
 }
 
-static void http_delete_1_impl(StringArg url, StringResult result) {
-  http_call(url, result, "http_delete",
-            [&](std::string &r) {
-              return do_http("DELETE", url.value(), {}, {}, {}, r);
-            });
+static void http_delete_1_impl(HttpState &st, StringArg url,
+                               StringResult result) {
+  http_call(st, url, result, "http_delete", [&](std::string &r) {
+    return do_http("DELETE", url.value(), {}, {}, {}, r);
+  });
 }
 
-static void http_patch_3_impl(StringArg url, StringArg ct, StringArg body,
-                              StringResult result) {
-  http_call(url, result, "http_patch", [&](std::string &r) {
+static void http_patch_3_impl(HttpState &st, StringArg url, StringArg ct,
+                              StringArg body, StringResult result) {
+  http_call(st, url, result, "http_patch", [&](std::string &r) {
     return do_http("PATCH", url.value(), {},
                    body.is_null() ? std::string_view{} : body.value(),
                    ct.is_null() ? std::string_view{} : ct.value(), r);
@@ -495,10 +521,10 @@ static void http_patch_3_impl(StringArg url, StringArg ct, StringArg body,
 // options_json: NULL or JSON object with keys: timeout (int seconds),
 //   proxy, user_agent, ssl_cert, ssl_key, ssl_ca_bundle (all strings).
 // Example: '{"timeout": 5, "proxy": "http://proxy:8080"}'
-static void http_6_impl(StringArg method, StringArg url, StringArg hdrs,
-                        StringArg body, StringArg ct, StringArg options,
-                        StringResult result) {
-  http_call(url, result, "http_request", [&](std::string &r) {
+static void http_6_impl(HttpState &st, StringArg method, StringArg url,
+                        StringArg hdrs, StringArg body, StringArg ct,
+                        StringArg options, StringResult result) {
+  http_call(st, url, result, "http_request", [&](std::string &r) {
     std::string_view m =
         method.is_null() ? std::string_view{"GET"} : method.value();
     HttpOptions opts =
@@ -570,51 +596,75 @@ static void urldecode_impl(StringArg input, StringResult result) {
 
 // Initial result buffer sizes:
 //   HTTP functions: 256KB — covers typical API responses used in SQL queries.
+//     A larger response grows the buffer through the server's retry (see
+//     http_call); max_allowed_packet is the limit.
 //   urlencode/urldecode: 8KB — URL-encoded strings are rarely larger.
-// A longer result is not truncated: the function reports its full length, and
-// the server grows the buffer and calls the function again (an HTTP function
-// sends its request a second time). A result longer than max_allowed_packet
-// returns NULL with a warning.
+//     Longer output grows the buffer the same way: curl_codec_impl reports
+//     the full length, and the server calls the function again.
 static constexpr size_t kHttpBufSize = 256 * 1024;
 static constexpr size_t kEncodeBufSize = 8 * 1024;
 
+// .max_result_length() below is VEF_MAX_RESULT_LENGTH, the widest result
+// column the server allows, not these buffer sizes: this extension does not
+// limit the length of an HTTP response, and url_encode output is up to three
+// times as long as its input. Without it, a materialized result (e.g. CREATE
+// TABLE ... AS SELECT) is sized from the width of the argument(s), and a
+// longer result does not fit. url_decode does not declare it: its output is
+// never longer than its input, so the argument width already holds it.
+//
 // Note: VEF does not support function overloading. Each function name maps
 // to exactly one signature. For HTTP calls with custom headers, use http().
 VEF_GENERATE_ENTRY_POINTS(
     make_extension()
         .func(make_func<&http_get_1_impl>("http_get")
                   .returns(STRING)
+                  .max_result_length(VEF_MAX_RESULT_LENGTH)
                   .param(STRING)
                   .buffer_size(kHttpBufSize)
+                  .prerun<&http_prerun>()
+                  .postrun<&http_postrun>()
                   .build())
         .func(make_func<&http_post_3_impl>("http_post")
                   .returns(STRING)
+                  .max_result_length(VEF_MAX_RESULT_LENGTH)
                   .param(STRING)
                   .param(STRING)
                   .param(STRING)
                   .buffer_size(kHttpBufSize)
+                  .prerun<&http_prerun>()
+                  .postrun<&http_postrun>()
                   .build())
         .func(make_func<&http_put_3_impl>("http_put")
                   .returns(STRING)
+                  .max_result_length(VEF_MAX_RESULT_LENGTH)
                   .param(STRING)
                   .param(STRING)
                   .param(STRING)
                   .buffer_size(kHttpBufSize)
+                  .prerun<&http_prerun>()
+                  .postrun<&http_postrun>()
                   .build())
         .func(make_func<&http_delete_1_impl>("http_delete")
                   .returns(STRING)
+                  .max_result_length(VEF_MAX_RESULT_LENGTH)
                   .param(STRING)
                   .buffer_size(kHttpBufSize)
+                  .prerun<&http_prerun>()
+                  .postrun<&http_postrun>()
                   .build())
         .func(make_func<&http_patch_3_impl>("http_patch")
                   .returns(STRING)
+                  .max_result_length(VEF_MAX_RESULT_LENGTH)
                   .param(STRING)
                   .param(STRING)
                   .param(STRING)
                   .buffer_size(kHttpBufSize)
+                  .prerun<&http_prerun>()
+                  .postrun<&http_postrun>()
                   .build())
         .func(make_func<&http_6_impl>("http_request")
                   .returns(STRING)
+                  .max_result_length(VEF_MAX_RESULT_LENGTH)
                   .param(STRING)
                   .param(STRING)
                   .param(STRING)
@@ -622,9 +672,12 @@ VEF_GENERATE_ENTRY_POINTS(
                   .param(STRING)
                   .param(STRING)
                   .buffer_size(kHttpBufSize)
+                  .prerun<&http_prerun>()
+                  .postrun<&http_postrun>()
                   .build())
         .func(make_func<&urlencode_impl>("url_encode")
                   .returns(STRING)
+                  .max_result_length(VEF_MAX_RESULT_LENGTH)
                   .param(STRING)
                   .buffer_size(kEncodeBufSize)
                   .deterministic()

@@ -60,4 +60,26 @@ decoded_len
 SELECT vsql_http.url_decode(@long_encoded) = @long_raw AS decoded_matches;
 decoded_matches
 1
+# Materialization: CREATE TABLE AS SELECT must size the column from
+# max_result_length (the function's declared VEF_MAX_RESULT_LENGTH output
+# cap), not from the width of the argument -- even for a deliberately
+# tiny argument, the declared column width must reflect the real
+# output cap, not shrink to fit. (The argument is a literal
+# expression, not a SQL variable, so the server computes its width
+# precisely instead of falling back to a generic large default for
+# variables of unknown length.)
+CREATE TABLE t_url_encode_materialize AS SELECT vsql_http.url_encode(REPEAT('!', 10)) AS v;
+SELECT DATA_TYPE, CHARACTER_MAXIMUM_LENGTH FROM INFORMATION_SCHEMA.COLUMNS
+WHERE TABLE_NAME = 't_url_encode_materialize' AND COLUMN_NAME = 'v';
+DATA_TYPE	CHARACTER_MAXIMUM_LENGTH
+longtext	4294967295
+DROP TABLE t_url_encode_materialize;
+# url_decode declares no max_result_length: its output is never longer
+# than its input, so the column is sized from the argument width.
+CREATE TABLE t_url_decode_materialize AS SELECT vsql_http.url_decode('%41%42') AS v;
+SELECT DATA_TYPE, CHARACTER_MAXIMUM_LENGTH FROM INFORMATION_SCHEMA.COLUMNS
+WHERE TABLE_NAME = 't_url_decode_materialize' AND COLUMN_NAME = 'v';
+DATA_TYPE	CHARACTER_MAXIMUM_LENGTH
+varchar	24
+DROP TABLE t_url_decode_materialize;
 UNINSTALL EXTENSION vsql_http;

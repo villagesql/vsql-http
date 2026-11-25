@@ -76,7 +76,7 @@ All functions return NULL for NULL input. HTTP functions return NULL with Warnin
 **Key Implementation Details:**
 - Thread-local curl handles with connection keep-alive (`curl_easy_reset()` between calls)
 - Process-wide `curl_global_init()` via `std::once_flag`
-- HTTP buffer size: 256KB (responses exceeding this are truncated)
+- HTTP buffer size: 256KB. A larger response makes the server grow the buffer and call the function again; `http_call()` keeps the first response in the call's `HttpState` for that call, so each SQL call sends one request. `http_prerun`/`http_postrun` create and free the state per statement. `max_allowed_packet` is the limit
 - URL encode/decode buffer size: 8KB
 - `http_request` method names: the standard methods (GET, HEAD, POST, PUT, DELETE, CONNECT, OPTIONS, TRACE, PATCH) match case-insensitively and are sent uppercase; any other method is sent as given
 - Header names are lowercased per HTTP/2 convention
@@ -84,7 +84,7 @@ All functions return NULL for NULL input. HTTP functions return NULL with Warnin
 - Options JSON supports: `timeout` (int), `proxy`, `user_agent`, `ssl_cert`, `ssl_key`, `ssl_ca_bundle` (strings)
 
 **Dependencies:**
-- VillageSQL Extension Framework SDK (`<villagesql/vsql.h>`, Protocol V3)
+- VillageSQL Extension Framework SDK (`<villagesql/vsql.h>`, Protocol V5): build against VillageSQL 0.0.8 or later, and install on a 0.0.8 or later server
 - libcurl: `libcurl4-openssl-dev` (Ubuntu/Debian), `libcurl-devel` (RHEL/Fedora), Xcode Command Line Tools (macOS)
 
 **Code Organization:**
@@ -92,9 +92,9 @@ All functions return NULL for NULL input. HTTP functions return NULL with Warnin
 - Function naming: lowercase with underscores (e.g., `http_get_1_impl`)
 - Variable naming: lowercase with underscores (e.g., `response_body`)
 
-## VillageSQL Extension Framework (VEF) API Pattern — Protocol V3
+## VillageSQL Extension Framework (VEF) API Pattern — Protocol V5
 
-This extension uses the Protocol V3 stable SDK (`<villagesql/vsql.h>`).
+This extension uses the Protocol V5 stable SDK (`<villagesql/vsql.h>`).
 
 ### Function Implementation Pattern
 
@@ -122,7 +122,7 @@ VEF_GENERATE_ENTRY_POINTS(
 )
 ```
 
-Extension name and version come from `manifest.json`; `make_extension()` takes no arguments in V3.
+Extension name and version come from `manifest.json`; `make_extension()` takes no arguments in V5.
 
 ## Testing
 
@@ -133,6 +133,7 @@ The extension includes test files using the MySQL Test Runner (MTR) framework:
 - **Test Files**:
   - `vsql_http_encode.test` - Tests URL encode/decode functions
   - `vsql_http_requests.test` - Tests all HTTP methods against a local `python3 -m http.server`
+  - `vsql_http_large.test` - Responses larger than the result buffer: whole content returned, one request per call (counted at a local helper server)
   - `vsql_http_live.test` - Tests real HTTPS against `villagesql.com/robots.txt` (skip when offline with `--skip-test=vsql_http_live`)
 
 ### Running Tests

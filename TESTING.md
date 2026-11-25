@@ -10,9 +10,10 @@ cd /path/to/villagesql/build/mysql-test
 perl mysql-test-run.pl --suite=/path/to/vsql_http/mysql-test
 ```
 
-All 3 tests should pass offline:
+These tests should pass offline:
 - `vsql_http_encode` — urlencode/urldecode correctness and NULL handling
 - `vsql_http_requests` — all HTTP methods against a local Python HTTP server
+- `vsql_http_large` — responses larger than the result buffer come back whole, and each call sends one request
 
 A fourth test requires network access:
 - `vsql_http_live` — GET `https://villagesql.com/robots.txt`, verifies real HTTPS works end-to-end
@@ -41,6 +42,11 @@ perl mysql-test-run.pl --suite=/path/to/vsql_http/mysql-test --record
 - NULL input → NULL return
 - Output longer than the 8192-byte buffer comes back in full via the
   server's grow-and-retry, not truncated to buffer_size
+- `CREATE TABLE ... AS SELECT url_encode(...)` sizes the materialized column
+  from `max_result_length` (`VEF_MAX_RESULT_LENGTH`), not from a short argument's
+  own width
+- `CREATE TABLE ... AS SELECT url_decode(...)` sizes the materialized column
+  from the argument width, because the decoded output is never longer
 
 **vsql_http_requests.test**
 - Starts a Python HTTP server on port 18777 serving `$MYSQLTEST_VARDIR`
@@ -48,6 +54,10 @@ perl mysql-test-run.pl --suite=/path/to/vsql_http/mysql-test --record
 - `http()` generic GET → status 200
 - `http()` with custom header → status 200
 - `http_post`, `http_delete`, `http_put`, `http_patch` → each returns a status code
+- `CREATE TABLE ... AS SELECT http_get(...)` sizes the materialized column
+  from `max_result_length` (`VEF_MAX_RESULT_LENGTH`), not from the short literal URL argument
+  -- the echoed response (headers included) comes back as valid, untruncated
+  JSON
 - NULL URL → NULL return
 - Connection refused → NULL return with curl's error as Warning 3200
 - Tears down the HTTP server with `pkill` after the test
